@@ -1,4 +1,37 @@
-# Putting the CSRP website online (Netlify)
+# CSRP website setup
+
+**Live site: https://website.williamalexforman.workers.dev** (Cloudflare Workers, Worker name `website`).
+Every push to `claude/cali-roleplay-website-design-7qsjpe` deploys automatically through Cloudflare's GitHub link.
+Check which settings the server sees at `/api/health` (yes/no only, never values).
+
+## Cloudflare settings
+
+Cloudflare dashboard > **Workers & Pages** > **website** > **Settings** > **Variables and Secrets** > **Add**.
+Use type **Secret** for the secret ones and **Text** for the rest. Settings are kept across deploys.
+
+| Name | Type | Value |
+|---|---|---|
+| DISCORD_CLIENT_ID | Text | Bot's Application ID |
+| DISCORD_CLIENT_SECRET | Secret | Developer Portal > OAuth2 > Reset Secret |
+| SESSION_SECRET | Secret | Long random password you make |
+| DISCORD_GUILD_ID | Text | Your CSRP server ID |
+| STAFF_ROLE_IDS | Text | Staff role IDs, separated by commas |
+| HR_ROLE_IDS | Text | HR role IDs, separated by commas |
+| OWNER_IDS | Text | Your Discord user ID |
+| ERLC_SERVER_KEY | Secret | ER:LC server key |
+| BOT_INGEST_SECRET | Secret | Long random password shared with the bot |
+| ANTHROPIC_API_KEY | Secret | Optional, for AI features |
+
+Discord redirect (Developer Portal > California Operations > OAuth2 > Redirects):
+`https://website.williamalexforman.workers.dev/auth/callback`
+
+Bot (camelBots): set SITE_URL to `https://website.williamalexforman.workers.dev` and BOT_INGEST_SECRET to the same value,
+limited to `website.williamalexforman.workers.dev`.
+
+---
+
+# Older: Netlify setup
+
 
 The site lives at **https://california-staterp.netlify.app**. Netlify serves the pages from `public/`, and the function in
 `netlify/functions/app.mjs` handles Discord sign-in, panel data (stored in Netlify Blobs), the ER:LC API, Claude and the bot.
