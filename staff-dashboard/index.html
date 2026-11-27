@@ -38,10 +38,15 @@
           <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5M7.8 16.2a6 6 0 0 1 0-8.5M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg><span id="onDuty">0 on duty</span></span>
         </div>
         <div class="shift">
+          <div style="position:relative">
           <button class="shift-btn" id="profileBtn" title="Profile">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c1-2 7-2 8 0"/></svg>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
           </button>
+          <div class="pmenu card" id="profileMenu" hidden>
+            <a href="#/profile">Profile</a><a href="#/shifts">My shifts</a><a href="#/timeoff">Time off</a><a href="#" data-signout>Sign out</a>
+          </div>
+          </div>
           <button class="shift-btn" id="shiftBtn"><span id="shiftLabel">Off shift</span> <span class="mono" id="shiftTime">00:00:00</span></button>
         </div>
       </div>
@@ -49,13 +54,12 @@
 
     <div class="drawer-backdrop" id="backdrop"></div>
     <aside class="drawer" id="drawer">
-      <div class="drawer-head"><a class="brand" href="#/"><span class="brand-mark">CS</span>CSRP Staff</a></div>
-      <nav id="drawerNav"></nav>
-      <div class="drawer-foot">
-        <span class="avatar" style="background:linear-gradient(135deg,#f6a54d,#b85a12)">YO</span>
-        <div style="flex:1"><div style="font-weight:600">You</div><div class="dim" style="font-size:12px">Administrator</div></div>
-        <button class="btn sm" id="logoutBtn">Log out</button>
+      <div class="drawer-head">
+        <span class="brand-mark">CS</span>
+        <div style="flex:1"><div class="dh-title">California State Roleplay</div><div class="dim" style="font-size:14px">Staff Panel</div></div>
+        <button class="icon-btn" id="drawerClose" aria-label="Close menu" style="border:0;width:32px;height:32px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
+      <nav id="drawerNav"></nav>
     </aside>
 
     <main class="sp-main" id="view"></main>
