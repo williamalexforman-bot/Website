@@ -64,10 +64,17 @@ async function readSession(req, env) {
 }
 
 /* ---------------- Discord sign-in ---------------- */
+const SIGNIN_VARS = ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET", "DISCORD_GUILD_ID"];
+const missingSignIn = env => SIGNIN_VARS.filter(k => !String(env[k] || "").trim());
+// Which settings the server can see (yes/no only, never values), for setup checks.
+function health(env) {
+  const names = [...SIGNIN_VARS, "STAFF_ROLE_IDS", "HR_ROLE_IDS", "OWNER_IDS", "ERLC_SERVER_KEY", "BOT_INGEST_SECRET", "ANTHROPIC_API_KEY"];
+  return json({ settings: Object.fromEntries(names.map(k => [k, !!String(env[k] || "").trim()])), missingForSignIn: missingSignIn(env) });
+}
 const DISCORD = "https://discord.com/api/v10";
 async function login(req, env) {
   const url = new URL(req.url);
-  if (!env.DISCORD_CLIENT_ID || !env.SESSION_SECRET) return err(500, "Discord sign-in isn't set up yet.");
+  if (missingSignIn(env).length) return new Response(null, { status: 302, headers: { location: "/#signin-error-setup" } });
   const next = (url.searchParams.get("next") || "overview").replace(/[^A-Za-z0-9-]/g, "").slice(0, 60);
   const state = b64u(crypto.getRandomValues(new Uint8Array(18)));
   const auth = new URL("https://discord.com/oauth2/authorize");
@@ -262,6 +269,7 @@ export async function handle(req, env, storeImpl) {
       if (p === "/auth/callback") return await callback(req, env);
       if (p === "/auth/logout") return new Response(null, { status: 302, headers: { location: "/", "set-cookie": cookie("csrp_s", "", 0) } });
       if (p === "/api/bot/ingest" && req.method === "POST") return await ingest(req, env);
+      if (p === "/api/health") return health(env);
       if (p.startsWith("/api/")) {
         // Same-origin only for writes (cookies are SameSite=Lax; this blocks cross-site form posts too).
         if (req.method !== "GET" && req.headers.get("origin") && req.headers.get("origin") !== url.origin) return err(403, "Bad origin");

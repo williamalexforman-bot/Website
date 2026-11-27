@@ -286,7 +286,8 @@ function renderGate() {
   $("#gate").hidden = false; $("#panel").hidden = true;
   const err = (location.hash.match(/signin-error-(\w+)/) || [])[1];
   const msg = S.applicant ? ["No staff role", `You're signed in as ${S.me?.name || "a Discord user"}, but your Discord account doesn't have a CSRP staff role. You can still fill in applications from the homepage.`]
-    : err ? ["Sign-in didn't finish", "Discord sign-in was cancelled or failed. Try again."]
+    : err === "setup" ? ["Discord sign-in isn't set up", "The site is missing its Discord settings. HR: add DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET and DISCORD_GUILD_ID in Netlify, then redeploy."]
+    : err ? ["Sign-in didn't finish", err === "cancelled" ? "You cancelled on Discord. Try again and tap Authorize." : "Discord sign-in failed. Check that the redirect https://california-staterp.netlify.app/auth/callback is added to the California Operations app, then try again."]
     : {
       connecting: ["Connecting…", "Loading the staff panel."],
       offline: ["Open this on claude.ai", "The staff panel saves shared data through claude.ai, so it only works when you open the panel's claude.ai link."],
