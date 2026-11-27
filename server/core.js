@@ -148,6 +148,19 @@ function guard(col, id, data, s, cur) {
   return d;
 }
 
+// Many collection reads in one request: {queries: [{col, order, dir, limit}]} -> {results: [[docs]...]}.
+async function sync(req, env, s) {
+  const { queries } = await req.json().catch(() => ({}));
+  if (!Array.isArray(queries) || queries.length > 30) return err(400, "Bad queries");
+  const st = store(env);
+  const results = await Promise.all(queries.map(async q => {
+    if (!RULES[q?.col] || !SEG.test(q.col)) return [];
+    const docs = await st.list(q.col, q.order, q.dir, q.limit);
+    return docs.filter(d => canRead(q.col, d.id, s));
+  }));
+  return json({ results });
+}
+
 /* ---------------- ER:LC API ---------------- */
 const ERLC_PATHS = { server: "/v1/server", players: "/v1/server/players", queue: "/v1/server/queue", killlogs: "/v1/server/killlogs", joinlogs: "/v1/server/joinlogs", commandlogs: "/v1/server/commandlogs", modcalls: "/v1/server/modcalls", staff: "/v1/server/staff", vehicles: "/v1/server/vehicles" };
 const cache = new Map();
@@ -286,6 +299,7 @@ export async function handle(req, env, storeImpl) {
         if (p === "/api/me") return s ? json({ id: s.id, name: s.name, avatar: s.avatar, level: s.level }) : err(401, "Signed out");
         if (!s) return err(401, "Signed out");
         const parts = p.split("/").slice(3).map(decodeURIComponent);
+        if (p === "/api/sync" && req.method === "POST") return await sync(req, env, s);
         if (p.startsWith("/api/db/")) return await dbApi(req, env, s, parts);
         if (p.startsWith("/api/erlc/")) return await erlc(req, env, s, parts[0]);
         if (p === "/api/ai" && req.method === "POST") return await ai(req, env, s);

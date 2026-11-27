@@ -14,8 +14,24 @@
   }
   const meP = fetch("/api/me", { credentials: "same-origin" }).then(r => (r.ok ? r.json() : null)).catch(() => null);
 
-  const listeners = new Set();
-  const refreshAll = () => listeners.forEach(f => f());
+  // All live queries are refreshed together in one request, every 20 seconds while the page is visible.
+  const subs = new Set();
+  let syncTimer = null, syncing = false;
+  function scheduleSync(ms) { clearTimeout(syncTimer); syncTimer = setTimeout(runSync, ms); }
+  async function runSync() {
+    if (syncing) return scheduleSync(500);
+    if (document.hidden || !subs.size) return scheduleSync(20000);
+    syncing = true;
+    const list = [...subs];
+    try {
+      const r = await api("POST", "/api/sync", { queries: list.map(x => x.q) });
+      list.forEach((x, i) => { if (!subs.has(x)) return; const docs = (r.results[i] || []).map(d => snapDoc(d.id, d.data)); x.next({ docs, size: docs.length, empty: !docs.length, docChanges: () => [], metadata: { fromCache: false, hasPendingWrites: false } }); });
+    } catch (e) { if (e.status === 401) list.forEach(x => x.onErr && x.onErr(e)); }
+    syncing = false;
+    scheduleSync(20000);
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleSync(0); });
+  const refreshAll = () => scheduleSync(150);
   const snapDoc = (id, data) => ({ id, exists: data !== undefined, data: () => data, metadata: { fromCache: false, hasPendingWrites: false } });
 
   function query(col, o = {}) {
@@ -32,18 +48,9 @@
         return { docs, size: docs.length, empty: !docs.length, docChanges: () => [], metadata: { fromCache: false, hasPendingWrites: false } };
       },
       onSnapshot(next, onErr) {
-        let stopped = false, busy = false;
-        const run = async () => {
-          if (stopped || busy || document.hidden) return;
-          busy = true;
-          try { next(await q.get()); } catch (e) { if (e.status === 401) { stopped = true; onErr && onErr(e); } }
-          busy = false;
-        };
-        run();
-        const t = setInterval(run, 8000);
-        listeners.add(run);
-        document.addEventListener("visibilitychange", run);
-        return () => { stopped = true; clearInterval(t); listeners.delete(run); };
+        const sub = { q: { col, order: o.f, dir: o.d, limit: o.n }, next, onErr };
+        subs.add(sub); scheduleSync(0);
+        return () => subs.delete(sub);
       },
     };
     return q;

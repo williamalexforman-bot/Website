@@ -204,7 +204,7 @@ async function boot() {
   S.phase = "ready";
   subscribeAll();
   if (!S.host && !S.applicant) registerProfile();
-  if (S.host && !S.applicant) { pollGame(); setInterval(pollGame, 30000); }
+  if (S.host && !S.applicant) { pollGame(); setInterval(() => { if (!document.hidden) pollGame(); }, 60000); }
   setInterval(tick, 1000);
   route(false);
 }
@@ -910,7 +910,7 @@ async function pollGame() {
   render(true);
 }
 function gameLogs(kind) {
-  if (Date.now() - (G.logsAt[kind] || 0) > 20000) {
+  if (Date.now() - (G.logsAt[kind] || 0) > 60000) {
     G.logsAt[kind] = Date.now();
     erlcGet(kind).then(d => { G.logs[kind] = Array.isArray(d) ? d : []; render(true); }).catch(e => { G.err = e.message; render(true); });
   }
