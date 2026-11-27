@@ -1,7 +1,9 @@
 # California State Roleplay website
 
-- `public/` holds the site: one page with the public homepage, the application forms (`#apply-<form>`) and the staff panel.
-- `worker/index.js` holds the Cloudflare Worker. It handles Discord sign-in, stores panel data, connects to the ER:LC API and calls Claude.
-- `DEPLOY.md` explains how to put it online.
+Live at https://california-staterp.netlify.app
 
-Local development: `npm install`, then put test settings in `.dev.vars` and run `npm run dev`.
+- `public/` holds the site: one page with the public homepage, the application forms (`#apply-<form>`) and the staff panel.
+- `server/core.js` holds the server logic: Discord sign-in, panel data rules, the ER:LC API, Claude and the bot inbox (`POST /api/bot/ingest`).
+- `netlify/functions/app.mjs` runs it on Netlify, with data in Netlify Blobs (`server/blobstore.js`).
+- `worker/index.js` and `wrangler.toml` run it on Cloudflare instead (optional).
+- `DEPLOY.md` explains the setup.

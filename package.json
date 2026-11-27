@@ -3,13 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "cloudflare:dev": "npx wrangler dev",
+    "cloudflare:deploy": "npx wrangler deploy"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.14.0"
-  },
-  "devDependencies": {
-    "wrangler": "^4.168.0"
+    "@anthropic-ai/sdk": "^1.14.0",
+    "@netlify/blobs": "^11.1.12"
   }
 }
