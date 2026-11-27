@@ -37,6 +37,7 @@ In Cloudflare, open the **csrp** Worker, then **Settings**, then **Variables and
 | DISCORD_CLIENT_SECRET | Secret | Client Secret from step 2 |
 | SESSION_SECRET | Secret | Your long random text |
 | ERLC_SERVER_KEY | Secret | ER:LC server key |
+| BOT_INGEST_SECRET | Secret | Another long random text, shared with the bot (step 5) |
 | ANTHROPIC_API_KEY | Secret | Optional, for the AI features |
 | DISCORD_GUILD_ID | Text | Your CSRP server ID |
 | STAFF_ROLE_IDS | Text | Staff role IDs, separated by commas |
@@ -44,6 +45,16 @@ In Cloudflare, open the **csrp** Worker, then **Settings**, then **Variables and
 | OWNER_IDS | Text | Your own Discord user ID (always gets HR access) |
 
 Tap **Deploy** (or push any change) so the new settings take effect.
+
+## 5. Connect the California Operations bot
+
+The bot sends tickets (for Transcripts), staff leavers, time-off requests and its staff list to the site.
+
+1. Open the bot's page on bots.camelai.com and go to its settings.
+2. Set **SITE_URL** to your site address, for example `https://csrp.yourname.workers.dev`.
+3. Set **BOT_INGEST_SECRET** to the same text you used in step 4.
+4. Publish the bot version with the website sync when you're ready. Check that it doesn't include unfinished Fastpass work.
+5. Run `/sitesync` in Discord once to send everything the bot already has.
 
 ## Who gets in
 

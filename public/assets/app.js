@@ -71,6 +71,7 @@ const S = {
   db: null, user: null, sample: null, me: null, uid: null, isAdmin: false, readOnly: false,
   profiles: {}, staffmeta: {}, shifts: {}, logs: {}, loa: {}, loadec: {}, settings: {},
   punishments: [], alerts: [], training: [], departments: [], forms: [], suggestions: [], responses: {},
+  transcripts: [], leavers: [], botloa: [], botstaff: {},
   loaded: new Set(), names: {}, slow: false,
 };
 const docsMap = snap => Object.fromEntries(snap.docs.map(d => [d.id, d.data()]));
@@ -93,7 +94,7 @@ async function save(path, fn, okMsg) {
 /* ================= Names & avatars ================= */
 // Only Discord usernames are shown. Real account names are never displayed.
 function wantNames() {}
-const nameOf = uid => S.profiles[uid]?.discord || (S.host && uid === S.uid ? S.me?.name : "") || "Unnamed staff";
+const nameOf = uid => S.profiles[uid]?.discord || S.botstaff[uid]?.user?.name || (S.host && uid === S.uid ? S.me?.name : "") || "Unnamed staff";
 function avatar(uid, size = 36) {
   const url = S.profiles[uid]?.avatar || (S.host && uid === S.uid ? S.me?.avatarUrl : "");
   if (url && /^https:\/\/cdn\.discordapp\.com\//.test(url)) return `<img class="avatar" alt="" style="width:${size}px;height:${size}px" src="${esc(url)}">`;
@@ -171,6 +172,12 @@ function subscribeAll() {
   listen("training", db.collection("training").orderBy("at", "desc").limit(300), s => { S.training = docsArr(s); });
   listen("departments", db.collection("departments"), s => { S.departments = docsArr(s); });
   listen("forms", db.collection("forms"), s => { S.forms = docsArr(s); });
+  if (S.host) listen("botstaff", db.collection("botstaff"), s => { S.botstaff = docsMap(s); });
+  if (S.host && S.isAdmin) {
+    listen("transcripts", db.collection("transcripts").orderBy("openedAt", "desc").limit(1000), s => { S.transcripts = docsArr(s); });
+    listen("leavers", db.collection("leavers").orderBy("at", "desc").limit(300), s => { S.leavers = docsArr(s); });
+    listen("botloa", db.collection("botloa").orderBy("at", "desc").limit(300), s => { S.botloa = docsArr(s); });
+  }
   if (S.isAdmin) {
     listen("suggestions", db.collection("suggestions").orderBy("at", "desc").limit(40), s => { S.suggestions = docsArr(s); });
     listen("responses", db.collection("responses"), s => { S.responses = docsMap(s); });
@@ -467,6 +474,10 @@ PAGES.timeoff = () => {
   ${waiting.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Staff</th><th>Dates</th><th>Reason</th><th>Decision</th></tr></thead><tbody>
   ${waiting.map(r => `<tr><td>${esc(nameOf(r.u))}</td><td style="white-space:nowrap">${esc(r.from)} to<br>${esc(r.to)}</td><td style="min-width:200px">${esc(r.reason)}</td><td style="white-space:nowrap"><button class="btn sm green" data-dec="approved" data-id="${esc(r.id)}">Approve</button> <button class="btn sm" data-dec="denied" data-id="${esc(r.id)}">Deny</button></td></tr>`).join("")}
   </tbody></table></div>` : empty("No requests waiting.")}` : ""}
+  ${S.host && S.isAdmin ? `<h2 class="section-title">Leave from Discord <span class="count">${S.botloa.length}</span></h2>
+  ${S.botloa.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Staff</th><th>Dates</th><th>Reason</th><th>Status</th><th>Decided by</th></tr></thead><tbody>
+  ${S.botloa.map(r => `<tr><td>${esc(r.user?.name)}</td><td style="white-space:nowrap">${esc(r.from)} to<br>${esc(r.to)}</td><td style="min-width:200px">${esc(r.reason)}</td><td><span class="pill ${r.status === "approved" ? "green" : r.status === "denied" ? "red" : r.status === "pending" ? "yellow" : ""}">${esc(r.status)}</span></td><td>${esc(r.decidedBy?.name || "-")}</td></tr>`).join("")}
+  </tbody></table></div>` : empty("The bot hasn't sent any leave requests yet.")}` : ""}
   <h2 class="section-title">Your requests</h2>
   ${mine.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Dates</th><th>Reason</th><th>Status</th><th>Decision</th><th></th></tr></thead><tbody>
   ${mine.map((r, i) => { const [st, c] = status(r), d = S.loadec[r.id]; return `<tr><td style="white-space:nowrap">${esc(r.from)} to<br>${esc(r.to)}</td><td style="min-width:200px">${esc(r.reason)}</td><td><span class="pill ${c}">${st}</span></td><td>${d ? `${esc(nameOf(d.by))}${d.note ? `: ${esc(d.note)}` : ""}` : "-"}</td><td>${st === "pending" ? `<button class="btn sm" data-cancel="${i}">Cancel</button>` : ""}</td></tr>`; }).join("")}
@@ -706,12 +717,12 @@ PAGES.forms.after = () => {
 
 /* ================= Pages: HR ================= */
 PAGES.staff = () => {
-  const ids = [...new Set([...Object.keys(S.profiles), ...Object.keys(S.shifts)])];
+  const ids = [...new Set([...Object.keys(S.profiles), ...Object.keys(S.shifts), ...Object.keys(S.botstaff)])];
   const lastShift = u => { const sd = shiftDoc(u); return sd.active ? Date.now() : (sd.log || [])[0]?.e || 0; };
   const inactive = ids.filter(u => Date.now() - lastShift(u) > 7 * D).length;
-  const leave = ids.filter(onLeave).length, discN = ids.filter(u => disc(S.staffmeta[u] || {}) !== "Clean").length;
+  const leave = ids.filter(u => onLeave(u) || S.botstaff[u]?.onLoa).length, discN = ids.filter(u => disc({ ...S.botstaff[u], ...(S.staffmeta[u] || {}) }) !== "Clean").length;
   const groups = {};
-  ids.forEach(u => { const g = S.staffmeta[u]?.group || "Unassigned"; (groups[g] ||= []).push(u); });
+  ids.forEach(u => { const g = S.staffmeta[u]?.group || (S.botstaff[u] ? "From Discord" : "Unassigned"); (groups[g] ||= []).push(u); });
   return `${head("Staff management")}
   <div class="kpis"><div class="kpi"><div class="v">${ids.length}</div><div class="l">Staff</div></div><div class="kpi"><div class="v">${inactive}</div><div class="l">No shift in 7 days</div></div><div class="kpi"><div class="v">${leave}</div><div class="l">On leave today</div></div><div class="kpi"><div class="v">${discN}</div><div class="l">On warnings or strikes</div></div></div>
   <div class="toolbar"><div class="search">${icon("search")}<input class="input" id="sQ" placeholder="Search staff" data-fresh></div>
@@ -719,7 +730,7 @@ PAGES.staff = () => {
   <p class="muted" style="font-size:14px;margin:0">Staff appear here after they open the panel once. Share the panel from the Share menu to add people.</p>
   <div id="sGroups">${Object.entries(groups).sort().map(([g, us]) => `<h2 class="section-title">${esc(g)} <span class="count">${us.length}</span></h2>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>Staff member</th><th>This week</th><th>All time</th><th>Last shift</th><th>Discipline</th><th>Punishments</th><th></th></tr></thead><tbody>
-    ${us.map(u => { const m = S.staffmeta[u] || {}, ls = lastShift(u), d = disc(m); return `<tr data-row="${esc(nameOf(u).toLowerCase())}"><td><div class="staff-cell">${avatar(u)}<div><div class="nm">${esc(nameOf(u))}</div><div class="rk">${esc(m.rank || "No rank")}${onLeave(u) ? " · On leave" : ""}</div></div></div></td>
+    ${us.map(u => { const b = S.botstaff[u] || {}, m = { rank: b.rank, warnings: b.warnings, strikes: b.strikes, ...(S.staffmeta[u] || {}) }, ls = lastShift(u), d = disc(m); return `<tr data-row="${esc(nameOf(u).toLowerCase())}"><td><div class="staff-cell">${avatar(u)}<div><div class="nm">${esc(nameOf(u))}</div><div class="rk">${esc(m.rank || "No rank")}${onLeave(u) || b.onLoa ? " · On leave" : ""}</div></div></div></td>
       <td>${fmtMin(minutesSince(u, weekStart()))}</td><td>${fmtMin(totalMinutes(u))}</td>
       <td>${shiftDoc(u).active ? `<span class="pill green">On shift</span>` : ls ? `<span class="pill ${Date.now() - ls > 7 * D ? "yellow" : ""}">${ago(ls)}</span>` : `<span class="pill yellow">No shifts</span>`}</td>
       <td>${d === "Clean" ? `<span class="muted">Clean</span>` : `<span class="pill ${m.strikes ? "red" : "yellow"}">${d}</span>`}</td>
@@ -821,8 +832,62 @@ PAGES.training.after = () => {
   document.querySelectorAll("[data-notes]").forEach(b => b.addEventListener("click", () => { const t = S.training.find(x => x.id === b.dataset.notes); modal(`<h3>${esc(t.trainee)}</h3><p style="line-height:1.6">${esc(t.notes)}</p><div class="actions"><button class="btn" data-close>Close</button></div>`); }));
 };
 
-PAGES.leavers = () => `${head("Staff leavers")}${notLinked(BOT_MSG)}`;
-PAGES.transcripts = () => `${head("Transcripts")}${notLinked(BOT_MSG)}`;
+PAGES.leavers = () => {
+  if (!S.host) return `${head("Staff leavers")}${notLinked(BOT_MSG)}`;
+  const list = S.leavers.filter(l => Date.now() - l.at < 90 * D);
+  return `${head("Staff leavers")}
+  <p class="muted" style="margin-top:-6px;line-height:1.5">Staff who left the Discord while holding the staff role, from the bot's Staff Member Left alerts (last 90 days). Resolve them in Discord.</p>
+  ${list.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Staff member</th><th>How they left</th><th>Left</th><th>Roles they had</th></tr></thead><tbody>
+  ${list.map(l => `<tr><td>${esc(l.user?.name)}<div class="dim" style="font-size:12px;margin-top:2px">${esc(l.user?.id)}</div></td><td>${esc(l.how)}</td><td style="white-space:nowrap">${fmtDay(l.at)}</td><td><div style="display:flex;flex-wrap:wrap;gap:6px">${(l.roles || []).filter(r => r && !/^[\s_\-─━]+$/.test(r)).map(r => `<span class="pill">${esc(r)}</span>`).join("")}</div></td></tr>`).join("")}
+  </tbody></table></div>` : empty("No staff have left in the last 90 days.")}`;
+};
+let tFilter = { opened: "", by: "", type: "" };
+const dur = ms => (ms == null || ms < 0 ? "-" : ms < H ? `${Math.round(ms / 60e3)}m` : `${Math.floor(ms / H)}h ${Math.round((ms % H) / 60e3)}m`);
+const avg = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+PAGES.transcripts = () => {
+  if (!S.host) return `${head("Transcripts")}${notLinked(BOT_MSG)}`;
+  const T = S.transcripts, closed = T.filter(t => t.closedAt), open = T.filter(t => !t.closedAt);
+  const firstReply = avg(T.filter(t => t.firstReplyAt && t.openedAt).map(t => t.firstReplyAt - t.openedAt));
+  const toClose = avg(closed.filter(t => t.openedAt).map(t => t.closedAt - t.openedAt));
+  const perDay = (T.filter(t => Date.now() - t.openedAt < 30 * D).length / 30).toFixed(1);
+  const staff = {}; T.forEach(t => { const c = t.claimedBy; if (!c) return; const r = (staff[c.id] ||= { name: c.name, n: 0, fr: [], tc: [] }); r.n++; if (t.firstReplyAt) r.fr.push(t.firstReplyAt - t.openedAt); if (t.closedAt) r.tc.push(t.closedAt - t.openedAt); });
+  const hours = Array(24).fill(0); T.forEach(t => { if (t.openedAt) hours[new Date(t.openedAt).getHours()]++; }); const hmax = Math.max(1, ...hours);
+  const types = [...new Set(T.map(t => t.type).filter(Boolean))];
+  const match = t => (!tFilter.opened || (t.openedBy?.name || "").toLowerCase().includes(tFilter.opened.toLowerCase()) || t.openedBy?.id === tFilter.opened) && (!tFilter.by || t.claimedBy?.id === tFilter.by) && (!tFilter.type || t.type === tFilter.type);
+  const row = t => `<tr><td>#${esc(t.number || t.id.slice(0, 6))}</td><td>${esc(t.type)}</td><td>${esc(t.openedBy?.name)}</td><td>${esc(t.subject)}</td><td style="white-space:nowrap">${t.openedAt ? fmtShort(t.openedAt) : "-"}</td><td>${t.claimedBy ? esc(t.claimedBy.name) : "No"}</td><td>${t.messages?.length ? `<button class="btn sm" data-tview="${esc(t.id)}">View</button>` : ""}</td></tr>`;
+  const head7 = `<thead><tr><th>Ticket</th><th>Type</th><th>Opened by</th><th>Subject</th><th>Opened</th><th>Claimed</th><th></th></tr></thead>`;
+  return `${head("Transcripts")}
+  <div class="card pad"><h2 style="font-size:26px;margin-bottom:18px">Ticket stats</h2>
+    <div class="kpis"><div class="kpi"><div class="v">${T.length}</div><div class="l">Opened</div></div><div class="kpi"><div class="v">${closed.length}</div><div class="l">Closed</div></div><div class="kpi"><div class="v">${open.length}</div><div class="l">Open now</div></div><div class="kpi"><div class="v">${dur(firstReply)}</div><div class="l">Average first reply</div></div><div class="kpi"><div class="v">${dur(toClose)}</div><div class="l">Average time to close</div></div><div class="kpi"><div class="v">${perDay}</div><div class="l">Tickets per day (30 days)</div></div></div>
+    <h3 style="font-size:20px;margin:28px 0 12px">Per staff member</h3>
+    ${Object.keys(staff).length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Staff member</th><th>Handled</th><th>First reply</th><th>Time to close</th></tr></thead><tbody>${Object.values(staff).sort((a, b) => b.n - a.n).map(r => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td>${dur(avg(r.fr))}</td><td>${dur(avg(r.tc))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">No claimed tickets yet.</p>`}
+    <h3 style="font-size:20px;margin:28px 0 0">Busiest hours (opened, your time)</h3>
+    <div class="bars">${hours.map((h, i) => `<div style="height:${(h / hmax) * 100}%" title="${String(i).padStart(2, "0")}:00 · ${h} tickets"></div>`).join("")}</div>
+    <div class="bars-x"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+  </div>
+  <div class="toolbar" style="margin-top:22px">
+    <input class="input" id="tOpen" placeholder="Name or Discord ID of the user" style="max-width:260px" value="${esc(tFilter.opened)}" data-fresh>
+    <select class="input" id="tBy" style="max-width:220px" data-fresh><option value="">Handled by: Anyone</option>${Object.entries(staff).map(([id, r]) => `<option value="${esc(id)}" ${tFilter.by === id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select>
+    <select class="input" id="tType" style="max-width:200px" data-fresh><option value="">All types</option>${types.map(t => `<option ${tFilter.type === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+    <button class="btn" id="tClear">Clear</button>
+  </div>
+  <h2 class="section-title" style="font-size:30px">Open tickets</h2>
+  ${open.filter(match).length ? `<div class="table-wrap"><table class="tbl">${head7}<tbody>${open.filter(match).map(row).join("")}</tbody></table></div>` : empty("No open tickets.")}
+  <h2 class="section-title">Closed tickets</h2>
+  ${closed.filter(match).length ? `<div class="table-wrap"><table class="tbl">${head7}<tbody>${closed.filter(match).slice(0, 200).map(row).join("")}</tbody></table></div>` : empty("No closed tickets yet.")}`;
+};
+PAGES.transcripts.after = () => {
+  if (!S.host) return;
+  const set = () => { tFilter = { opened: $("#tOpen").value.trim(), by: $("#tBy").value, type: $("#tType").value }; document.activeElement?.blur(); route(true); };
+  $("#tOpen").addEventListener("change", set); $("#tBy").addEventListener("change", set); $("#tType").addEventListener("change", set);
+  $("#tClear").addEventListener("click", () => { tFilter = { opened: "", by: "", type: "" }; route(true); });
+  document.querySelectorAll("[data-tview]").forEach(b => b.addEventListener("click", () => {
+    const t = S.transcripts.find(x => x.id === b.dataset.tview);
+    modal(`<h3>Ticket #${esc(t.number || "")}</h3><p class="muted" style="margin:0 0 12px">${esc(t.type)} · opened by ${esc(t.openedBy?.name)}${t.closedAt ? ` · closed ${fmtShort(t.closedAt)}` : ""}</p>
+    <div class="transcript">${(t.messages || []).map(m => `<div class="tmsg"><b>${esc(m.author?.name || "Unknown")}</b> <span class="dim">${m.at ? fmtShort(m.at) : ""}</span><div>${esc(m.content)}</div></div>`).join("")}</div>
+    <div class="actions"><button class="btn" data-close>Close</button></div>`);
+  }));
+};
 PAGES.log = () => {
   const rows = Object.entries(S.logs).flatMap(([u, l]) => (l.items || []).map(i => ({ ...i, u }))).sort((a, b) => b.at - a.at);
   return `${head("Website log")}

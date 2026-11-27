@@ -5,7 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import Anthropic from "@anthropic-ai/sdk";
 
 /* ---------------- Access levels & rules ---------------- */
-const ORDER = { applicant: 0, staff: 1, admin: 2 };
+const ORDER = { applicant: 0, staff: 1, admin: 2, bot: 99 }; // "bot": only the Discord bot writes, through /api/bot/ingest
 // read/write: minimum level for any document in the collection.
 // self: minimum level to read and write your own document (doc id = your Discord id).
 const RULES = {
@@ -23,6 +23,11 @@ const RULES = {
   suggestions: { read: "admin", write: "admin" },
   punishments: { read: "staff", write: "staff" },
   alerts: { read: "staff", write: "staff" },
+  // Sent by the California Operations bot
+  transcripts: { read: "admin", write: "bot" },
+  leavers: { read: "admin", write: "bot" },
+  botloa: { read: "admin", write: "bot" },
+  botstaff: { read: "staff", write: "bot" },
 };
 const SEG = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
 const lv = s => ORDER[s?.level] ?? -1;
@@ -220,6 +225,52 @@ async function ai(req, env, s) {
   }
 }
 
+
+/* ---------------- Discord bot inbox ---------------- */
+const str = (v, n) => String(v ?? "").slice(0, n);
+const num = v => (Number.isFinite(+v) ? +v : null);
+const person = u => (u && u.id ? { id: str(u.id, 32), name: str(u.name, 64) } : null);
+const docId = v => str(v, 180).replace(/[^A-Za-z0-9_\-.~:@+]/g, "_") || "x";
+async function ingest(req, env) {
+  const auth = req.headers.get("authorization") || "";
+  if (!env.BOT_INGEST_SECRET || !safeEqual(auth, "Bearer " + env.BOT_INGEST_SECRET)) return err(401, "Bad bot secret");
+  const text = await req.text(); if (text.length > 1024 * 1024) return err(413, "Too large");
+  let body; try { body = JSON.parse(text); } catch { return err(400, "Bad JSON"); }
+  const d = isObj(body?.data) ? body.data : null; if (!d) return err(400, "data must be an object");
+  const st = store(env);
+  if (body.type === "transcript") {
+    if (!d.ticketId) return err(400, "ticketId required");
+    const id = docId(d.ticketId), cur = (await st.get("transcripts", id)) || {};
+    const t = {
+      ...cur, number: str(d.number, 20), type: str(d.type, 60), openedBy: person(d.openedBy), claimedBy: person(d.claimedBy),
+      subject: str(d.subject, 200), openedAt: num(d.openedAt), firstReplyAt: num(d.firstReplyAt), closedAt: num(d.closedAt), closedBy: person(d.closedBy),
+    };
+    if (Array.isArray(d.messages)) {
+      let msgs = d.messages.slice(-300).map(m => ({ author: person(m.author), content: str(m.content, 1000), at: num(m.at) }));
+      while (msgs.length && JSON.stringify(msgs).length > 200 * 1024) msgs = msgs.slice(10);
+      t.messages = msgs;
+    }
+    await st.set("transcripts", id, t); return json({ ok: true });
+  }
+  if (body.type === "staff_left") {
+    const u = person(d.user); if (!u) return err(400, "user required");
+    const at = num(d.at) || Date.now();
+    await st.set("leavers", docId(u.id + "-" + at), { user: u, how: str(d.how, 40), at, roles: (Array.isArray(d.roles) ? d.roles : []).slice(0, 60).map(r => str(r, 60)) });
+    return json({ ok: true });
+  }
+  if (body.type === "loa") {
+    const u = person(d.user); if (!u || !d.id) return err(400, "id and user required");
+    await st.set("botloa", docId(d.id), { user: u, from: str(d.from, 10), to: str(d.to, 10), reason: str(d.reason, 1000), status: str(d.status, 20), decidedBy: person(d.decidedBy), at: num(d.at) || Date.now() });
+    return json({ ok: true });
+  }
+  if (body.type === "staff") {
+    const u = person(d.user); if (!u) return err(400, "user required");
+    await st.set("botstaff", docId(u.id), { user: u, rank: str(d.rank, 60), strikes: num(d.strikes) || 0, warnings: num(d.warnings) || 0, onLoa: !!d.onLoa, at: Date.now() });
+    return json({ ok: true });
+  }
+  return err(400, "Unknown type");
+}
+
 /* ---------------- Router ---------------- */
 export default {
   async fetch(req, env) {
@@ -228,6 +279,7 @@ export default {
       if (p === "/auth/login") return login(req, env);
       if (p === "/auth/callback") return callback(req, env);
       if (p === "/auth/logout") return new Response(null, { status: 302, headers: { location: "/", "set-cookie": cookie("csrp_s", "", 0) } });
+      if (p === "/api/bot/ingest" && req.method === "POST") return ingest(req, env);
       if (p.startsWith("/api/")) {
         // Same-origin only for writes (cookies are SameSite=Lax; this blocks cross-site form posts too).
         if (req.method !== "GET" && req.headers.get("origin") && req.headers.get("origin") !== url.origin) return err(403, "Bad origin");

@@ -21,4 +21,4 @@ new_sqlite_classes = ["Store"]
 keep_vars = true
 # Settings to add in the dashboard (Worker > Settings > Variables and Secrets):
 #   Text:   DISCORD_GUILD_ID, STAFF_ROLE_IDS, HR_ROLE_IDS, OWNER_IDS   (comma-separated Discord ids)
-#   Secret: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET, ERLC_SERVER_KEY, ANTHROPIC_API_KEY (optional)
+#   Secret: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET, ERLC_SERVER_KEY, BOT_INGEST_SECRET, ANTHROPIC_API_KEY (optional)
