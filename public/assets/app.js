@@ -66,7 +66,8 @@ const BOT_MSG = "This page needs the Discord bot to send its data to the panel, 
 
 /* ================= State ================= */
 const S = {
-  phase: "connecting", // connecting | offline | noaccess | ready
+  phase: "connecting", // connecting | offline | signin | noaccess | ready
+  host: !!window.CSRP_HOST, level: "staff", applicant: false,
   db: null, user: null, sample: null, me: null, uid: null, isAdmin: false, readOnly: false,
   profiles: {}, staffmeta: {}, shifts: {}, logs: {}, loa: {}, loadec: {}, settings: {},
   punishments: [], alerts: [], training: [], departments: [], forms: [], suggestions: [], responses: {},
@@ -90,19 +91,14 @@ async function save(path, fn, okMsg) {
 }
 
 /* ================= Names & avatars ================= */
-let namesInFlight = false;
-function wantNames(ids) {
-  if (!S.user) return;
-  const missing = [...new Set(ids)].filter(id => id && !S.names[id]);
-  if (!missing.length || namesInFlight) return;
-  namesInFlight = true;
-  S.user.profiles(missing).then(ps => { Object.assign(S.names, ps); namesInFlight = false; render(true); }).catch(() => { namesInFlight = false; });
-}
-const nameOf = uid => (uid === S.uid ? (S.me?.name || "You") : (S.names[uid]?.name || "Someone"));
+// Only Discord usernames are shown. Real account names are never displayed.
+function wantNames() {}
+const nameOf = uid => S.profiles[uid]?.discord || (S.host && uid === S.uid ? S.me?.name : "") || "Unnamed staff";
 function avatar(uid, size = 36) {
-  const p = uid === S.uid ? S.me : S.names[uid];
-  if (p?.avatarUrl) return `<img class="avatar" alt="" style="width:${size}px;height:${size}px" src="${esc(p.avatarUrl)}">`;
-  return `<span class="avatar" style="width:${size}px;height:${size}px;background:#2a3340;color:#fff">?</span>`;
+  const url = S.profiles[uid]?.avatar || (S.host && uid === S.uid ? S.me?.avatarUrl : "");
+  if (url && /^https:\/\/cdn\.discordapp\.com\//.test(url)) return `<img class="avatar" alt="" style="width:${size}px;height:${size}px" src="${esc(url)}">`;
+  const n = nameOf(uid);
+  return `<span class="avatar" style="width:${size}px;height:${size}px;background:#2a3340;color:#fff">${esc(n === "Unnamed staff" ? "?" : n.slice(0, 2).toUpperCase())}</span>`;
 }
 
 /* ================= Shift maths ================= */
@@ -162,6 +158,7 @@ function listen(name, ref, apply) {
 }
 function subscribeAll() {
   const db = S.db;
+  if (S.applicant) { listen("forms", db.collection("forms"), s => { S.forms = docsArr(s); }); return; }
   listen("profiles", db.collection("profiles"), s => { S.profiles = docsMap(s); });
   listen("staffmeta", db.collection("staffmeta"), s => { S.staffmeta = docsMap(s); });
   listen("shifts", db.collection("shifts"), s => { S.shifts = docsMap(s); });
@@ -178,7 +175,7 @@ function subscribeAll() {
     listen("suggestions", db.collection("suggestions").orderBy("at", "desc").limit(40), s => { S.suggestions = docsArr(s); });
     listen("responses", db.collection("responses"), s => { S.responses = docsMap(s); });
   }
-  setTimeout(() => { if (S.loaded.size < 8) { S.slow = true; render(true); } }, 10000);
+  setTimeout(() => { if (!S.applicant && S.loaded.size < 8) { S.slow = true; render(true); } }, 10000);
 }
 async function registerProfile() {
   try {
@@ -191,11 +188,16 @@ async function boot() {
   if (!window.claude?.use) { S.phase = "offline"; route(false); return; }
   const [db, user, sample] = await Promise.all(["db", "user", "sample"].map(n => window.claude.use(n).catch(() => null)));
   Object.assign(S, { db, user, sample });
-  if (user) { S.me = await user.me(); S.uid = S.me.id; S.isAdmin = !!S.me.canEdit; const w = await user.can("data.write"); if (w === false) S.readOnly = true; }
-  if (!db || !S.uid) { S.phase = "noaccess"; route(false); return; }
+  if (user) {
+    S.me = await user.me(); S.uid = S.me.id; S.isAdmin = !!S.me.canEdit;
+    S.level = S.me.level || (S.isAdmin ? "admin" : "staff"); S.applicant = S.level === "applicant";
+    const w = await user.can("data.write"); if (w === false && !S.applicant) S.readOnly = true;
+  }
+  if (!db || !S.uid) { S.phase = S.host ? "signin" : "noaccess"; route(false); return; }
   S.phase = "ready";
   subscribeAll();
-  registerProfile();
+  if (!S.host && !S.applicant) registerProfile();
+  if (S.host && !S.applicant) { pollGame(); setInterval(pollGame, 30000); }
   setInterval(tick, 1000);
   route(false);
 }
@@ -212,7 +214,8 @@ const TITLES = { ...Object.fromEntries(NAV.flatMap(g => g[1]).map(([k, t]) => [k
 function buildNav(cur) {
   const active = cur.startsWith("guide") ? "guide" : cur;
   $("#drawerNav").innerHTML = NAV.filter(([g]) => g !== "HR" || S.isAdmin).map(([g, items]) => `<div class="grp">${g}</div>${items.map(([k, t, ic]) => `<a class="item ${k === active ? "active" : ""}" href="#${k}">${icon(ic)}${t}</a>`).join("")}`).join("")
-    + `<div class="grp">${S.isAdmin ? "HR access" : "Staff access"}</div><a class="item" href="#home">${icon("logout")}Back to website</a>`;
+    + `<div class="grp">${S.isAdmin ? "HR access" : "Staff access"}</div><a class="item" href="#home">${icon("arrowL")}Back to website</a>`
+    + (S.host ? `<a class="item" href="/auth/logout">${icon("logout")}Sign out</a>` : "");
 }
 function setDrawer(open) { $("#drawer").classList.toggle("open", open); $("#backdrop").classList.toggle("open", open); }
 $("#menuBtn").addEventListener("click", () => setDrawer(true));
@@ -243,7 +246,7 @@ function route(keepScroll) {
   document.title = "California State Roleplay";
   if (site) return;
   if (form) { renderForm(key.slice(6)); return; }
-  if (!ready()) { renderGate(); return; }
+  if (!ready() || S.applicant) { renderGate(); return; }
   $("#gate").hidden = true; $("#panel").hidden = false;
   let page = PAGES[key] ? key : "overview";
   if (HR_PAGES.has(page) && !S.isAdmin) page = "overview";
@@ -266,15 +269,27 @@ function route(keepScroll) {
 function collectIds() {
   return [...Object.keys(S.profiles), ...Object.keys(S.shifts), ...S.punishments.map(p => p.by), ...S.alerts.map(a => a.by), ...Object.keys(S.logs)];
 }
-function updateChips() { $("#onDuty").textContent = `${ready() ? onDutyIds().length : 0} on duty`; }
+function updateChips() {
+  $("#onDuty").textContent = `${ready() ? onDutyIds().length : 0} on duty`;
+  const g = $("#gameChip");
+  if (!S.host) { g.textContent = "Game not linked"; return; }
+  g.textContent = G.server ? `${G.server.CurrentPlayers ?? 0} of ${G.server.MaxPlayers ?? "?"} in-game · ${(G.queue || []).length} in queue` : G.err ? "Game unreachable" : "Loading game…";
+}
 function renderGate() {
   $("#gate").hidden = false; $("#panel").hidden = true;
-  const msg = {
-    connecting: ["Connecting…", "Loading the staff panel."],
-    offline: ["Open this on claude.ai", "The staff panel saves shared data through claude.ai, so it only works when you open the panel's claude.ai link."],
-    noaccess: ["You don't have access yet", "Sign in to claude.ai, then ask HR to share the staff panel with your account as a Contributor."],
-  }[S.phase] || ["Connecting…", ""];
+  const err = (location.hash.match(/signin-error-(\w+)/) || [])[1];
+  const msg = S.applicant ? ["No staff role", `You're signed in as ${S.me?.name || "a Discord user"}, but your Discord account doesn't have a CSRP staff role. You can still fill in applications from the homepage.`]
+    : err ? ["Sign-in didn't finish", "Discord sign-in was cancelled or failed. Try again."]
+    : {
+      connecting: ["Connecting…", "Loading the staff panel."],
+      offline: ["Open this on claude.ai", "The staff panel saves shared data through claude.ai, so it only works when you open the panel's claude.ai link."],
+      signin: ["Sign in with Discord", "Approve the California Operations bot on Discord to confirm you're CSRP staff. The panel shows your Discord username only."],
+      noaccess: ["You don't have access yet", "Sign in to claude.ai, then ask HR to share the staff panel with your account as a Contributor."],
+    }[S.phase] || ["Connecting…", ""];
   $("#gateTitle").textContent = msg[0]; $("#gateText").textContent = msg[1];
+  const btn = $("#gateBtn"), showBtn = S.host && (S.phase === "signin" || err);
+  btn.hidden = !showBtn; btn.href = "/auth/login?next=overview";
+  $("#gateOut").hidden = !(S.host && S.applicant);
 }
 window.addEventListener("hashchange", () => { formDone = null; route(false); });
 
@@ -288,7 +303,12 @@ function renderForm(slug) {
   const card = $("#formCard");
   if (formDone === slug) { if (!card.dataset.done) { card.dataset.done = "1"; card.dataset.slug = ""; card.innerHTML = `<h1 style="font-size:28px">Submitted</h1><p class="muted" style="line-height:1.6">Thanks! CSRP staff will review your answers.</p><a class="btn" href="#home">Back home</a>`; } return; }
   delete card.dataset.done;
-  if (!ready()) { card.innerHTML = `<h1 style="font-size:28px">${S.phase === "connecting" ? "Loading…" : "Sign in to apply"}</h1><p class="muted" style="line-height:1.6">${S.phase === "connecting" ? "Loading the form." : "Forms save through claude.ai. Open this page's claude.ai link while signed in, and ask CSRP staff for access if it says you don't have it."}</p>`; return; }
+  if (!ready()) {
+    card.innerHTML = S.phase === "connecting" ? `<p class="muted">Loading the form…</p>`
+      : S.host ? `<h1 style="font-size:28px">Sign in to apply</h1><p class="muted" style="line-height:1.6">Sign in with Discord so CSRP staff know who sent this. Only your Discord username is shared with them.</p><a class="btn discord" href="/auth/login?next=apply-${esc(slug.replace(/[^a-z0-9-]/g, ""))}">Continue with Discord</a>`
+      : `<h1 style="font-size:28px">Sign in to apply</h1><p class="muted" style="line-height:1.6">Forms save through claude.ai. Open this page's claude.ai link while signed in, and ask CSRP staff for access if it says you don't have it.</p>`;
+    return;
+  }
   const f = S.forms.find(x => x.id === slug);
   if (!f) { card.innerHTML = S.loaded.has("forms") ? `<h1 style="font-size:28px">Form not found</h1><p class="muted">This form doesn't exist or was removed.</p><a class="btn" href="#home">Back home</a>` : `<p class="muted">Loading…</p>`; return; }
   if (!f.open) { card.innerHTML = `<h1 style="font-size:28px">${esc(f.title)}</h1><p class="muted">This form is closed right now.</p><a class="btn" href="#home">Back home</a>`; return; }
@@ -344,8 +364,8 @@ PAGES.overview = () => {
   const shiftsWeek = (sd.log || []).filter(s => s.e >= weekStart()).length;
   const open = S.alerts.filter(a => !a.resolved && Date.now() - a.at < 6 * H);
   const feed = Object.entries(S.logs).flatMap(([u, l]) => (l.items || []).map(i => ({ ...i, u }))).sort((a, b) => b.at - a.at).slice(0, 15);
-  return `<div class="ov-hello"><div class="muted">${greeting()}</div><h1>${esc(S.me?.name || "Staff member")}</h1>
-    <div class="ov-id">${icon("discord", 15)} ${me.discord ? `Discord: ${esc(me.discord)}` : `Discord not added · <a href="#profile">add it</a>`}</div>
+  return `<div class="ov-hello"><div class="muted">${greeting()}</div><h1>${esc(nameOf(S.uid) === "Unnamed staff" ? "Staff member" : nameOf(S.uid))}</h1>
+    <div class="ov-id">${icon("discord", 15)} ${me.discord || S.host ? `Signed in as ${esc(me.discord || S.me?.name || "")}` : `Discord not added · <a href="#profile">add it</a>`}</div>
     <div class="ov-id">${icon("roblox", 15)} ${me.roblox ? `Roblox ID ${esc(me.roblox)}` : `Roblox not added · <a href="#profile">add it</a>`}</div></div>
   ${open.length ? `<div class="card list-card ov-card" style="margin:0 0 18px;border-color:rgba(240,99,99,.4)"><div class="lc-head split-head">Staff requested <a href="#onduty">View all</a></div>${open.slice(0, 3).map(a => `<div class="ov-pun"><div>${esc(a.text)}</div><div class="muted">${esc(nameOf(a.by))}, ${ago(a.at)}</div></div>`).join("")}</div>` : ""}
   <div class="card shift-card">
@@ -376,6 +396,7 @@ PAGES.overview = () => {
   <div class="card list-card ov-card"><div class="lc-head">Activity</div>
     ${feed.length ? feed.map(f => `<div class="ov-act"><span><b>${esc(nameOf(f.u))}</b> ${esc(f.action.charAt(0).toLowerCase() + f.action.slice(1))}${f.target ? ` · ${esc(f.target)}` : ""}</span><span class="dim">${ago(f.at)}</span></div>`).join("") : `<div class="lc-empty">No staff activity yet.</div>`}
   </div>
+  ${S.host ? (() => { const joins = gameLogs("joinlogs"); return `<div class="card list-card ov-card"><div class="lc-head">Server activity</div>${!joins ? `<div class="lc-empty">${G.err ? "Couldn't reach the ER:LC server." : "Loading…"}</div>` : joins.length ? joins.slice().sort((a, b) => b.Timestamp - a.Timestamp).slice(0, 15).map(j => `<div class="ov-act"><span><b>${esc(who(j.Player).name)}</b> ${j.Join ? "joined" : "left"} the server</span><span class="dim">${gameTime(j.Timestamp)}</span></div>`).join("") : `<div class="lc-empty">No joins or leaves yet.</div>`}</div>`; })() : ""}
   <div class="ov-footer"><span>California State Roleplay · Staff Panel</span></div>`;
 };
 PAGES.overview.after = () => {
@@ -399,14 +420,15 @@ PAGES.profile = () => {
   const mine = S.punishments.filter(x => x.by === S.uid).length;
   return `${head("My Profile")}
   <div class="card prof-top">
-    <div class="prof-acc">${avatar(S.uid, 56)}<div><div class="nm">${esc(S.me?.name || "You")}</div><div class="muted">${p.discord ? `@${esc(p.discord)} · Discord` : "Discord not added"}</div></div></div>
+    <div class="prof-acc">${avatar(S.uid, 56)}<div><div class="nm">${esc(nameOf(S.uid))}</div><div class="muted">${p.discord ? `@${esc(p.discord)} · Discord` : "Discord not added"}</div></div></div>
     <span class="pill yellow" style="margin-left:auto;font-size:14px;padding:5px 12px">${S.isAdmin ? "HR" : "Staff"}</span>
   </div>
   <div class="card prof-sec">
     <h2>Linked accounts</h2>
     <p class="muted" style="margin:0 0 6px;font-size:14px">Add these so other staff can match you to your Discord and Roblox accounts.</p>
     <form id="profF">
-      <label class="lbl" for="pfD">Discord username</label><input class="input" id="pfD" value="${esc(p.discord || "")}" placeholder="your_discord_name" maxlength="40">
+      <label class="lbl" for="pfD">Discord username</label><input class="input" id="pfD" value="${esc(p.discord || (S.host ? S.me?.name : "") || "")}" placeholder="your_discord_name" maxlength="40" ${S.host ? `readonly title="From your Discord sign-in"` : ""}>
+      ${S.host ? `<p class="dim" style="font-size:13px;margin:6px 0 0">Comes from your Discord sign-in.</p>` : ""}
       <label class="lbl" for="pfR">Roblox user ID</label><input class="input" id="pfR" value="${esc(p.roblox || "")}" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 1234567890" maxlength="20">
       <button class="btn primary" style="margin-top:14px" ${S.readOnly ? "disabled" : ""}>Save</button>
       ${p.roblox ? ` <a class="btn ghost" href="https://www.roblox.com/users/${encodeURIComponent(p.roblox)}/profile" target="_blank" rel="noopener">Open on Roblox</a>` : ""}
@@ -812,21 +834,81 @@ PAGES.log = () => {
 };
 PAGES.log.after = () => $("#logQ").addEventListener("input", e => { const q = e.target.value.toLowerCase(); document.querySelectorAll("#logBody tr").forEach(tr => { tr.hidden = q && !tr.textContent.toLowerCase().includes(q); }); });
 
+
+/* ================= ER:LC (real website only) ================= */
+const G = { server: null, players: null, queue: null, logs: {}, logsAt: {}, err: null };
+async function erlcGet(kind) { const r = await fetch("/api/erlc/" + kind, { credentials: "same-origin" }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "ER:LC error"); return r.json(); }
+async function pollGame() {
+  try { const [server, players, queue] = await Promise.all(["server", "players", "queue"].map(erlcGet)); Object.assign(G, { server, players, queue, err: null }); }
+  catch (e) { G.err = e.message; }
+  render(true);
+}
+function gameLogs(kind) {
+  if (Date.now() - (G.logsAt[kind] || 0) > 20000) {
+    G.logsAt[kind] = Date.now();
+    erlcGet(kind).then(d => { G.logs[kind] = Array.isArray(d) ? d : []; render(true); }).catch(e => { G.err = e.message; render(true); });
+  }
+  return G.logs[kind];
+}
+const who = v => { const [name, id] = String(v || "").split(":"); return { name: name || "Unknown", id: id || "" }; };
+const gameTime = t => ago((+t || 0) * 1000);
+const TEAM_COLORS = { Police: "#5b8def", Sheriff: "#4cc38a", Fire: "#f06363", DOT: "#f0963a", Jail: "#a37cf0", Civilian: "#ffffff" };
+const gameWait = () => (G.err ? `<div class="card pad muted">Couldn't reach the ER:LC server: ${esc(G.err)}</div>` : `<p class="muted">Loading from ER:LC…</p>`);
+
 /* ================= Pages: In game ================= */
-PAGES.map = () => `${head("Map")}${notLinked(GAME_MSG)}`;
-PAGES.vision = () => `${head("CSRP Vision")}${notLinked(GAME_MSG)}`;
-PAGES.commands = () => `${head("Commands")}
-  ${notLinked("Running commands from the panel needs the ER:LC private server API, which this host can't reach. Use these in game for now.")}
+PAGES.map = () => {
+  if (!S.host) return `${head("Map")}${notLinked(GAME_MSG)}`;
+  if (!G.players) return `${head("Map")}${gameWait()}`;
+  const teams = {}; G.players.forEach(pl => { (teams[pl.Team || "Civilian"] ||= []).push(pl); });
+  return `${head("Map", "Who is on which team right now. The ER:LC API doesn't share player positions.")}
+  <p style="font-size:19px;margin:0" class="muted">${G.players.length} player${G.players.length === 1 ? "" : "s"} in the server.</p>
+  <div class="legend">${Object.entries(TEAM_COLORS).map(([n, c]) => `<span><i style="border-color:${c}"></i>${n} ${(teams[n] || []).length}</span>`).join("")}</div>
+  ${Object.keys(teams).length ? `<div class="grid-2">${Object.entries(teams).map(([t, ps]) => `<div class="card list-card"><div class="lc-head"><i class="team-dot" style="background:${TEAM_COLORS[t] || "#999"}"></i> ${esc(t)} <span class="count">${ps.length}</span></div>${ps.map(pl => `<div class="prow"><div><div class="nm">${esc(who(pl.Player).name)}</div><div class="id">${esc(pl.Callsign || pl.Permission || "")}</div></div></div>`).join("")}</div>`).join("")}</div>` : `<p class="muted">Nobody is in the server.</p>`}`;
+};
+PAGES.vision = () => {
+  if (!S.host) return `${head("CSRP Vision")}${notLinked(GAME_MSG)}`;
+  const kills = gameLogs("killlogs"), calls = gameLogs("modcalls"), joins = gameLogs("joinlogs");
+  const recentKills = (kills || []).filter(k => Date.now() / 1000 - k.Timestamp < 900).sort((a, b) => b.Timestamp - a.Timestamp);
+  return `${head("CSRP Vision", "Kills, mod calls and joins from the ER:LC server.")}
+  <h2 class="section-title" style="margin-top:0">Kills, last 15 minutes</h2>
+  ${!kills ? gameWait() : recentKills.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Killer</th><th>Killed</th><th>When</th></tr></thead><tbody>${recentKills.map(k => `<tr><td>${esc(who(k.Killer).name)}</td><td>${esc(who(k.Killed).name)}</td><td>${gameTime(k.Timestamp)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">No kills.</p>`}
+  <h2 class="section-title">Mod calls</h2>
+  ${!calls ? gameWait() : calls.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Caller</th><th>Responder</th><th>When</th></tr></thead><tbody>${calls.slice().sort((a, b) => b.Timestamp - a.Timestamp).slice(0, 30).map(c => `<tr><td>${esc(who(c.Caller).name)}</td><td>${c.Moderator ? esc(who(c.Moderator).name) : `<span class="pill red">Nobody yet</span>`}</td><td>${gameTime(c.Timestamp)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">No mod calls.</p>`}
+  <h2 class="section-title">Joins and leaves</h2>
+  ${!joins ? gameWait() : joins.length ? `<div class="card list-card">${joins.slice().sort((a, b) => b.Timestamp - a.Timestamp).slice(0, 25).map(j => `<div class="ov-act"><span><b>${esc(who(j.Player).name)}</b> ${j.Join ? "joined" : "left"} the server</span><span class="dim">${gameTime(j.Timestamp)}</span></div>`).join("")}</div>` : `<p class="muted">No recent joins.</p>`}`;
+};
+PAGES.commands = () => {
+  const logs = S.host ? gameLogs("commandlogs") : null;
+  return `${head("Commands")}
+  ${S.host ? `<form id="cmdF" class="card pad"><label class="lbl" for="cmdIn" style="margin-top:0">Run a command in the server</label>
+    <div class="chat-input"><input class="input mono" id="cmdIn" placeholder=":h Server restart in 5 minutes" required maxlength="300" data-fresh><button class="btn primary" ${S.readOnly ? "disabled" : ""}>Run</button></div>
+    <p class="dim" style="font-size:13px;margin:8px 0 0">${S.isAdmin ? "You can run any command." : "Staff can run moderator commands. :ban and other admin commands are HR only."}</p></form>`
+    : notLinked("Running commands from the panel needs the ER:LC private server API, which this host can't reach. Use these in game for now.")}
   <div class="table-wrap" style="margin-top:16px"><table class="tbl"><thead><tr><th>Command</th><th>What it does</th><th>Rank</th><th>Usage</th></tr></thead><tbody>
   ${COMMANDS.map(c => `<tr><td>${c[0]}</td><td style="min-width:220px">${c[1]}</td><td>${c[2]}</td><td><code style="color:var(--text)">${esc(c[3])}</code></td></tr>`).join("")}
-  </tbody></table></div>`;
+  </tbody></table></div>
+  ${S.host ? `<h2 class="section-title">Recent commands in the server</h2>${!logs ? gameWait() : logs.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Player</th><th>Command</th><th>When</th></tr></thead><tbody>${logs.slice().sort((a, b) => b.Timestamp - a.Timestamp).slice(0, 40).map(c => `<tr><td>${esc(who(c.Player).name)}</td><td><code>${esc(c.Command)}</code></td><td>${gameTime(c.Timestamp)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">No commands yet.</p>`}` : ""}`;
+};
+PAGES.commands.after = () => {
+  const f = $("#cmdF"); if (!f) return;
+  f.addEventListener("submit", async e => {
+    e.preventDefault(); const command = $("#cmdIn").value.trim(), btn = f.querySelector("button"); btn.disabled = true;
+    try {
+      const r = await fetch("/api/erlc/command", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ command }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { $("#cmdIn").value = ""; toast("Command sent"); G.logsAt.commandlogs = 0; } else toast(d.error || "Command failed");
+    } catch { toast("Couldn't reach the server"); }
+    btn.disabled = false;
+  });
+};
 PAGES.players = () => {
   const mine = [...new Map(S.punishments.filter(p => p.by === S.uid).map(p => [p.player.toLowerCase(), p])).values()].slice(0, 8);
   return `${head("Players")}
   <div class="card pad"><h2 style="font-size:22px;margin-bottom:14px">Find a player</h2>
     <form id="findP" class="search" style="max-width:none">${icon("search")}<input class="input" id="findQ" placeholder="Roblox username or ID" data-fresh></form>
     <div id="findRes"></div></div>
-  <div class="card list-card" style="margin-top:20px"><div class="lc-head">In the server</div><div class="lc-empty">Needs the in-game connection.</div></div>
+  <div class="card list-card" style="margin-top:20px"><div class="lc-head">In the server${G.players ? ` <span class="count">${G.players.length}</span>` : ""}</div>
+    ${!S.host ? `<div class="lc-empty">Needs the in-game connection.</div>` : !G.players ? `<div class="lc-empty">${G.err ? "Couldn't reach the ER:LC server." : "Loading…"}</div>` : G.players.length ? G.players.map(pl => { const w = who(pl.Player), past = S.punishments.filter(x => x.player.toLowerCase() === w.name.toLowerCase() || String(x.robloxId) === w.id).length; return `<div class="prow"><span class="team-dot" style="background:${TEAM_COLORS[pl.Team] || "#999"}"></span><div style="flex:1"><div class="nm">${esc(w.name)}</div><div class="id">${esc(pl.Team || "")}${pl.Callsign ? " · " + esc(pl.Callsign) : ""}${pl.Permission && pl.Permission !== "Normal" ? " · " + esc(pl.Permission) : ""}</div></div>${past ? `<span class="pill yellow">${past} on record</span>` : ""}</div>`; }).join("") : `<div class="lc-empty">Nobody is in the server.</div>`}</div>
   <div class="card list-card" style="margin-top:20px"><div class="lc-head">Players you punished recently</div>
     ${mine.length ? mine.map(p => `<div class="prow"><div><div class="nm">${esc(p.player)}</div><div class="id">${esc(p.robloxId || "No Roblox ID")}</div><div class="meta">${esc(p.action)} · ${ago(p.at)}</div></div></div>`).join("") : `<div class="lc-empty">You haven't logged any punishments yet.</div>`}
   </div>`;

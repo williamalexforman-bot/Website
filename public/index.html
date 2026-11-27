@@ -121,6 +121,8 @@
     <span class="brand-mark" style="margin:0 auto;width:56px;height:56px;font-size:20px;border-radius:14px">CS</span>
     <h1 id="gateTitle">Connecting…</h1>
     <p id="gateText">Loading the staff panel.</p>
+    <a class="btn discord block" id="gateBtn" href="/auth/login?next=overview" hidden style="padding:13px;margin-bottom:14px">Continue with Discord</a>
+    <a class="btn block" id="gateOut" href="/auth/logout" hidden style="margin-bottom:14px">Sign in with a different Discord account</a>
     <a href="#home" style="font-size:14px">← Back to site</a>
   </div>
   <div id="panel" hidden>
@@ -133,7 +135,7 @@
       </div>
       <div class="sp-row2">
         <div class="chips">
-          <span class="chip">Game not linked</span>
+          <span class="chip" id="gameChip">Game not linked</span>
           <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5M7.8 16.2a6 6 0 0 1 0-8.5M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg><span id="onDuty">0 on duty</span></span>
         </div>
         <div class="shift">
@@ -165,6 +167,7 @@
 
 <div class="modal-bg" id="modalBg"><div class="card modal" id="modal" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" role="status"></div>
+<script src="assets/host.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

@@ -451,3 +451,4 @@ img.avatar { object-fit: cover; display: block; }
 .nl p { margin: 6px 0 0; line-height: 1.55; }
 a.qa { text-decoration: none; }
 @media (max-width: 860px) { .nav-links .nav-btn { padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; } }
+.team-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; vertical-align: middle; }

@@ -1,0 +1,249 @@
+// California State Roleplay: Cloudflare Worker.
+// Serves the site (from /public via the ASSETS binding), signs staff in with Discord,
+// stores panel data in a SQLite-backed Durable Object, proxies the ER:LC API and Claude.
+import { DurableObject } from "cloudflare:workers";
+import Anthropic from "@anthropic-ai/sdk";
+
+/* ---------------- Access levels & rules ---------------- */
+const ORDER = { applicant: 0, staff: 1, admin: 2 };
+// read/write: minimum level for any document in the collection.
+// self: minimum level to read and write your own document (doc id = your Discord id).
+const RULES = {
+  profiles: { read: "staff", write: "admin", self: "staff" },
+  shifts: { read: "staff", write: "admin", self: "staff" },
+  log: { read: "staff", write: "admin", self: "staff" },
+  loa: { read: "staff", write: "admin", self: "staff" },
+  responses: { read: "admin", write: "admin", self: "applicant" },
+  loadec: { read: "staff", write: "admin" },
+  staffmeta: { read: "staff", write: "admin" },
+  settings: { read: "staff", write: "admin" },
+  training: { read: "staff", write: "admin" },
+  departments: { read: "staff", write: "admin" },
+  forms: { read: "applicant", write: "admin" },
+  suggestions: { read: "admin", write: "admin" },
+  punishments: { read: "staff", write: "staff" },
+  alerts: { read: "staff", write: "staff" },
+};
+const SEG = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
+const lv = s => ORDER[s?.level] ?? -1;
+function canRead(col, id, s) { const r = RULES[col]; if (!r) return false; return lv(s) >= ORDER[r.read] || (!!r.self && id === s.id && lv(s) >= ORDER[r.self]); }
+function canWrite(col, id, s) { const r = RULES[col]; if (!r) return false; return lv(s) >= ORDER[r.write] || (!!r.self && id === s.id && lv(s) >= ORDER[r.self]); }
+
+/* ---------------- Storage ---------------- */
+export class Store extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec("CREATE TABLE IF NOT EXISTS docs (col TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (col, id))");
+  }
+  list(col, order, dir, limit) {
+    const lim = Math.min(Math.max(+limit || 500, 1), 1000);
+    const rows = order && /^[A-Za-z0-9_]{1,40}$/.test(order)
+      ? this.sql.exec(`SELECT id, data FROM docs WHERE col = ? ORDER BY json_extract(data, ?) ${dir === "desc" ? "DESC" : "ASC"} LIMIT ?`, col, "$." + order, lim).toArray()
+      : this.sql.exec("SELECT id, data FROM docs WHERE col = ? ORDER BY id LIMIT ?", col, lim).toArray();
+    return rows.map(r => ({ id: r.id, data: JSON.parse(r.data) }));
+  }
+  get(col, id) { const r = this.sql.exec("SELECT data FROM docs WHERE col = ? AND id = ?", col, id).toArray()[0]; return r ? JSON.parse(r.data) : null; }
+  set(col, id, data) {
+    this.sql.exec("INSERT INTO docs (col, id, data, at) VALUES (?, ?, ?, ?) ON CONFLICT(col, id) DO UPDATE SET data = excluded.data, at = excluded.at", col, id, JSON.stringify(data), Date.now());
+  }
+  update(col, id, patch) { const cur = this.get(col, id); if (!cur) return false; this.set(col, id, merge(cur, patch)); return true; }
+  delete(col, id) { this.sql.exec("DELETE FROM docs WHERE col = ? AND id = ?", col, id); }
+  count() { return this.sql.exec("SELECT COUNT(*) AS n FROM docs").toArray()[0].n; }
+}
+const isObj = v => v && typeof v === "object" && !Array.isArray(v);
+function merge(a, b) { const out = { ...a }; for (const [k, v] of Object.entries(b)) out[k] = isObj(v) && isObj(a[k]) ? merge(a[k], v) : v; return out; }
+const store = env => env.STORE.get(env.STORE.idFromName("csrp"));
+
+/* ---------------- Helpers ---------------- */
+const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
+const err = (status, message) => json({ error: message }, status);
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromB64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+async function hmac(secret, text) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64u(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text)));
+}
+function cookies(req) { return Object.fromEntries((req.headers.get("cookie") || "").split(/;\s*/).filter(Boolean).map(c => { const i = c.indexOf("="); return [c.slice(0, i), c.slice(i + 1)]; })); }
+const cookie = (name, value, maxAge) => `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+const ids = v => String(v || "").split(",").map(s => s.trim()).filter(Boolean);
+function safeEqual(a, b) { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
+
+async function makeSession(env, s) { const body = b64u(new TextEncoder().encode(JSON.stringify(s))); return body + "." + (await hmac(env.SESSION_SECRET, body)); }
+async function readSession(req, env) {
+  const raw = cookies(req).csrp_s; if (!raw || !env.SESSION_SECRET) return null;
+  const [body, sig] = raw.split("."); if (!body || !sig) return null;
+  if (!safeEqual(sig, await hmac(env.SESSION_SECRET, body))) return null;
+  try { const s = JSON.parse(new TextDecoder().decode(fromB64u(body))); return s.exp > Date.now() ? s : null; } catch { return null; }
+}
+
+/* ---------------- Discord sign-in ---------------- */
+const DISCORD = "https://discord.com/api/v10";
+async function login(req, env) {
+  const url = new URL(req.url);
+  if (!env.DISCORD_CLIENT_ID || !env.SESSION_SECRET) return err(500, "Discord sign-in isn't set up yet.");
+  const next = (url.searchParams.get("next") || "overview").replace(/[^A-Za-z0-9-]/g, "").slice(0, 60);
+  const state = b64u(crypto.getRandomValues(new Uint8Array(18)));
+  const auth = new URL("https://discord.com/oauth2/authorize");
+  auth.search = new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, response_type: "code", redirect_uri: url.origin + "/auth/callback", scope: "identify guilds.members.read", state });
+  return new Response(null, { status: 302, headers: { location: auth.toString(), "set-cookie": cookie("csrp_state", `${state}.${next}`, 600) } });
+}
+async function callback(req, env) {
+  const url = new URL(req.url), back = m => new Response(null, { status: 302, headers: { location: "/#signin-error-" + m, "set-cookie": cookie("csrp_state", "", 0) } });
+  const [state, next] = (cookies(req).csrp_state || "").split(".");
+  if (!state || !safeEqual(state, url.searchParams.get("state") || "")) return back("state");
+  const code = url.searchParams.get("code"); if (!code) return back("cancelled");
+  const tok = await fetch(DISCORD + "/oauth2/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code, redirect_uri: url.origin + "/auth/callback" }) });
+  if (!tok.ok) return back("token");
+  const { access_token } = await tok.json();
+  const H = { authorization: "Bearer " + access_token };
+  const meRes = await fetch(DISCORD + "/users/@me", { headers: H }); if (!meRes.ok) return back("user");
+  const me = await meRes.json();
+  let roles = [];
+  const mem = await fetch(`${DISCORD}/users/@me/guilds/${env.DISCORD_GUILD_ID}/member`, { headers: H });
+  if (mem.ok) roles = (await mem.json()).roles || [];
+  const has = list => roles.some(r => ids(list).includes(r));
+  const level = ids(env.OWNER_IDS).includes(me.id) || has(env.HR_ROLE_IDS) ? "admin" : has(env.STAFF_ROLE_IDS) ? "staff" : "applicant";
+  const avatar = me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=96` : "";
+  const s = { id: me.id, name: me.username, avatar, level, exp: Date.now() + 12 * 3600e3 };
+  if (level !== "applicant") {
+    const st = store(env), cur = await st.get("profiles", me.id);
+    await st.set("profiles", me.id, { joined: Date.now(), roblox: "", ...(cur || {}), discord: me.username, avatar });
+  }
+  const headers = new Headers({ location: "/#" + (next || "overview") });
+  headers.append("set-cookie", cookie("csrp_s", await makeSession(env, s), 12 * 3600));
+  headers.append("set-cookie", cookie("csrp_state", "", 0));
+  return new Response(null, { status: 302, headers });
+}
+
+/* ---------------- Database API ---------------- */
+async function dbApi(req, env, s, parts) {
+  const [col, id] = parts;
+  if (!SEG.test(col || "") || (id !== undefined && !SEG.test(id)) || parts.length > 2) return err(400, "Bad path");
+  if (!RULES[col]) return err(404, "Unknown collection");
+  const st = store(env), url = new URL(req.url);
+  if (req.method === "GET" && id === undefined) {
+    const docs = await st.list(col, url.searchParams.get("order"), url.searchParams.get("dir"), url.searchParams.get("limit"));
+    return json({ docs: docs.filter(d => canRead(col, d.id, s)) });
+  }
+  if (req.method === "GET") { if (!canRead(col, id, s)) return json({ exists: false }); const data = await st.get(col, id); return json(data ? { exists: true, data } : { exists: false }); }
+  let body = {};
+  if (req.method !== "DELETE") {
+    const text = await req.text(); if (text.length > 256 * 1024) return err(413, "Too large");
+    try { body = JSON.parse(text); } catch { return err(400, "Bad JSON"); }
+    if (!isObj(body.data)) return err(400, "data must be an object");
+  }
+  if (req.method === "POST" && id === undefined) {
+    const newId = crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+    if (!canWrite(col, newId, s)) return err(403, "Not allowed");
+    if ((await st.count()) > 25000) return err(507, "Storage full");
+    await st.set(col, newId, guard(col, newId, body.data, s)); return json({ id: newId });
+  }
+  if (!canWrite(col, id, s)) return err(403, "Not allowed");
+  if (req.method === "PUT") { await st.set(col, id, guard(col, id, body.data, s, await st.get(col, id))); return json({ ok: true }); }
+  if (req.method === "PATCH") { return (await st.update(col, id, guard(col, id, body.data, s))) ? json({ ok: true }) : err(404, "Not found"); }
+  if (req.method === "DELETE") { await st.delete(col, id); return json({ ok: true }); }
+  return err(405, "Method not allowed");
+}
+// Fields the server owns: a staff member can't rename themselves or post as someone else.
+function guard(col, id, data, s, cur) {
+  const d = { ...data };
+  if (col === "profiles") { d.discord = cur?.discord ?? (id === s.id ? s.name : d.discord); d.avatar = cur?.avatar ?? (id === s.id ? s.avatar : d.avatar); }
+  if (["punishments", "alerts", "training"].includes(col) && "by" in d) d.by = s.id;
+  if (col === "loadec") d.by = s.id;
+  return d;
+}
+
+/* ---------------- ER:LC API ---------------- */
+const ERLC_PATHS = { server: "/v1/server", players: "/v1/server/players", queue: "/v1/server/queue", killlogs: "/v1/server/killlogs", joinlogs: "/v1/server/joinlogs", commandlogs: "/v1/server/commandlogs", modcalls: "/v1/server/modcalls", staff: "/v1/server/staff", vehicles: "/v1/server/vehicles" };
+const cache = new Map();
+async function erlc(req, env, s, kind) {
+  if (lv(s) < ORDER.staff) return err(403, "Staff only");
+  if (!env.ERLC_SERVER_KEY) return err(503, "The ER:LC server key isn't set up yet.");
+  const base = env.ERLC_BASE || "https://api.policeroleplay.community";
+  if (kind === "command" && req.method === "POST") {
+    const { command } = await req.json().catch(() => ({}));
+    const cmd = String(command || "").trim();
+    if (!/^:[a-z]+/i.test(cmd) || cmd.length > 300) return err(400, "Commands start with a colon, like :h hello");
+    const name = cmd.slice(1).split(/\s+/)[0].toLowerCase();
+    const STAFF_CMDS = ["h", "m", "pm", "kick", "tp", "bring", "heal", "respawn", "refresh", "jail", "unjail", "wanted", "unwanted", "log"];
+    if (!STAFF_CMDS.includes(name) && lv(s) < ORDER.admin) return err(403, `Only HR can run :${name}.`);
+    const r = await fetch(base + "/v1/server/command", { method: "POST", headers: { "server-key": env.ERLC_SERVER_KEY, "content-type": "application/json" }, body: JSON.stringify({ command: cmd }) });
+    if (!r.ok) return err(r.status === 429 ? 429 : 502, r.status === 429 ? "ER:LC is rate limiting. Try again in a few seconds." : "ER:LC didn't accept the command.");
+    const st = store(env), cur = await st.get("log", s.id);
+    await st.set("log", s.id, { items: [{ at: Date.now(), action: "Ran a command", target: cmd.slice(0, 80) }, ...(cur?.items || [])].slice(0, 150) });
+    return json({ ok: true });
+  }
+  const path = ERLC_PATHS[kind]; if (!path || req.method !== "GET") return err(404, "Unknown");
+  const hit = cache.get(kind);
+  if (hit && Date.now() - hit.at < 15000) return json(hit.data);
+  const r = await fetch(base + path, { headers: { "server-key": env.ERLC_SERVER_KEY } });
+  if (!r.ok) { if (hit) return json(hit.data); return err(r.status === 429 ? 429 : 502, "Couldn't reach the ER:LC server."); }
+  const data = await r.json();
+  cache.set(kind, { at: Date.now(), data });
+  return json(data);
+}
+
+/* ---------------- Claude (Ask Goldie, Suggestions) ---------------- */
+const aiUse = new Map();
+async function ai(req, env, s) {
+  if (lv(s) < ORDER.staff) return err(403, "Staff only");
+  if (!env.ANTHROPIC_API_KEY) return err(503, "AI isn't set up yet.");
+  const now = Date.now(), recent = (aiUse.get(s.id) || []).filter(t => now - t < 60000);
+  if (recent.length >= 10) return err(429, "Too many requests. Wait a minute.");
+  aiUse.set(s.id, [...recent, now]);
+  const { system, messages } = await req.json().catch(() => ({}));
+  const msgs = (Array.isArray(messages) ? messages : []).slice(-20)
+    .filter(m => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .map(m => ({ role: m.role, content: m.content.slice(0, 8000) }));
+  if (!msgs.length || msgs[msgs.length - 1].role !== "user") return err(400, "Bad conversation");
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  try {
+    const res = await client.beta.messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 16000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low" },
+      system: String(system || "").slice(0, 20000) || undefined,
+      messages: msgs,
+    });
+    if (res.stop_reason === "refusal") return err(422, "Claude declined that request.");
+    const text = res.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
+    return text ? json({ text }) : err(502, "Empty answer");
+  } catch (e) {
+    if (e instanceof Anthropic.RateLimitError) return err(429, "AI is busy. Try again in a bit.");
+    if (e instanceof Anthropic.AuthenticationError) return err(503, "The AI key is invalid.");
+    if (e instanceof Anthropic.APIError) return err(502, "AI error " + e.status);
+    return err(502, "AI request failed");
+  }
+}
+
+/* ---------------- Router ---------------- */
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url), p = url.pathname;
+    try {
+      if (p === "/auth/login") return login(req, env);
+      if (p === "/auth/callback") return callback(req, env);
+      if (p === "/auth/logout") return new Response(null, { status: 302, headers: { location: "/", "set-cookie": cookie("csrp_s", "", 0) } });
+      if (p.startsWith("/api/")) {
+        // Same-origin only for writes (cookies are SameSite=Lax; this blocks cross-site form posts too).
+        if (req.method !== "GET" && req.headers.get("origin") && req.headers.get("origin") !== url.origin) return err(403, "Bad origin");
+        const s = await readSession(req, env);
+        if (p === "/api/me") return s ? json({ id: s.id, name: s.name, avatar: s.avatar, level: s.level }) : err(401, "Signed out");
+        if (!s) return err(401, "Signed out");
+        const parts = p.split("/").slice(3).map(decodeURIComponent);
+        if (p.startsWith("/api/db/")) return dbApi(req, env, s, parts);
+        if (p.startsWith("/api/erlc/")) return erlc(req, env, s, parts[0]);
+        if (p === "/api/ai" && req.method === "POST") return ai(req, env, s);
+        return err(404, "Not found");
+      }
+      return env.ASSETS.fetch(req);
+    } catch (e) {
+      console.error(e);
+      return err(500, "Server error");
+    }
+  },
+};
