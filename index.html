@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>California State Roleplay</title>
+  <meta name="description" content="California State Roleplay — a serious, community-driven roleplay server.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="site-nav">
+    <a class="brand" href="index.html"><span class="brand-mark">CS</span>California State Roleplay</a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#about">About</a>
+      <a href="#departments">Departments</a>
+      <a href="#rules">Rules</a>
+      <a href="#apply">Apply</a>
+      <a class="btn primary" href="staff-dashboard/">Staff panel</a>
+    </nav>
+    <button class="icon-btn nav-toggle" aria-label="Menu" onclick="document.getElementById('navLinks').classList.toggle('open')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow"><span class="dot"></span>Server sessions running daily</span>
+      <h1>Welcome to <span class="grad">California State Roleplay</span></h1>
+      <p class="lead">A serious roleplay community built around realistic policing, fire &amp; rescue, and civilian life across the Golden State. Join the Discord, pick a department, and make your story.</p>
+      <div class="cta">
+        <a class="btn primary" href="#" onclick="return false;">Join our Discord</a>
+        <a class="btn" href="#apply">Apply for staff</a>
+      </div>
+      <div class="stats-strip">
+        <div class="card stat"><div class="num">4,200+</div><div class="lab">Discord members</div></div>
+        <div class="card stat"><div class="num">60</div><div class="lab">Server slots</div></div>
+        <div class="card stat"><div class="num">80+</div><div class="lab">Active staff</div></div>
+        <div class="card stat"><div class="num">6</div><div class="lab">Departments</div></div>
+      </div>
+    </section>
+
+    <section class="section" id="about">
+      <div class="section-head">
+        <h2>Why play with us</h2>
+        <p>Everything about CSRP is built to keep roleplay fair, fun, and consistent, from fast staff response to departments with real structure.</p>
+      </div>
+      <div class="grid-3">
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/></svg></div>
+          <h3>Active moderation</h3>
+          <p>Trained staff on shift every day, with logged punishments and a fair appeals process.</p>
+        </div>
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+          <h3>Real departments</h3>
+          <p>Ranks, training, and chains of command for law enforcement, fire, DOT and more.</p>
+        </div>
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></div>
+          <h3>Regular sessions</h3>
+          <p>Scheduled sessions and events every week, announced in the Discord ahead of time.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="departments">
+      <div class="section-head">
+        <h2>Departments</h2>
+        <p>Pick where you want to serve. Each department has its own Discord, training, and ranks.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card dept"><div class="badge" style="background:rgba(91,141,239,.15);color:#7aa7f2">CHP</div><div><h3>California Highway Patrol</h3><p>Traffic enforcement, pursuits and highway safety across the state.</p></div></div>
+        <div class="card dept"><div class="badge" style="background:rgba(91,141,239,.15);color:#7aa7f2">SPD</div><div><h3>State Police Department</h3><p>City patrol, investigations and community policing.</p></div></div>
+        <div class="card dept"><div class="badge" style="background:rgba(76,195,138,.15);color:#4cc38a">SO</div><div><h3>Sheriff's Office</h3><p>County patrol, rural response, and the county jail.</p></div></div>
+        <div class="card dept"><div class="badge" style="background:rgba(240,99,99,.15);color:#f06363">FD</div><div><h3>Fire &amp; Rescue</h3><p>Fire suppression, EMS, and technical rescue calls.</p></div></div>
+        <div class="card dept"><div class="badge" style="background:rgba(240,150,58,.15);color:#f0963a">DOT</div><div><h3>Department of Transportation</h3><p>Towing, road works, and scene support for every department.</p></div></div>
+        <div class="card dept"><div class="badge" style="background:rgba(255,255,255,.08);color:#ddd">CIV</div><div><h3>Civilian Operations</h3><p>Businesses, jobs and everyday life that keep the state moving.</p></div></div>
+      </div>
+    </section>
+
+    <section class="section" id="rules">
+      <div class="section-head">
+        <h2>Core rules</h2>
+        <p>The short version. The full rulebook lives in the Discord.</p>
+      </div>
+      <div class="rules-list">
+        <div class="card rule"><div><b>No RDM or VDM.</b> <span>Don't kill or run people over without a roleplay reason.</span></div></div>
+        <div class="card rule"><div><b>Value your life.</b> <span>Act like your character would in real danger. No fail roleplay.</span></div></div>
+        <div class="card rule"><div><b>No tool abuse.</b> <span>Items and tools are for roleplay, not for trolling other players.</span></div></div>
+        <div class="card rule"><div><b>New life rule.</b> <span>After you die, forget the events that led to your death.</span></div></div>
+        <div class="card rule"><div><b>Respect staff.</b> <span>Follow staff instructions in game. Take disputes to a ticket.</span></div></div>
+      </div>
+    </section>
+
+    <section class="section" id="apply">
+      <div class="card cta-band">
+        <div>
+          <h2>Want to join the staff team?</h2>
+          <p class="muted" style="margin:0">Staff applications are open. Read the requirements in the Discord, then apply.</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <a class="btn primary" href="forms.html?f=staff-application">Staff application</a>
+          <a class="btn" href="forms.html?f=appeals">Appeal a punishment</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>© 2026 California State Roleplay. Not affiliated with Roblox Corporation.</span>
+    <span><a href="staff-dashboard/">Staff panel</a> · <a href="forms.html?f=appeals">Appeals</a></span>
+  </footer>
+</body>
+</html>

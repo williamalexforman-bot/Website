@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSRP Staff Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+  <!-- Login gate (demo only, no real auth) -->
+  <div id="login" class="card login" hidden>
+    <span class="brand-mark" style="margin:0 auto;width:56px;height:56px;font-size:20px;border-radius:14px">CS</span>
+    <h1>CSRP Staff Panel</h1>
+    <p>Sign in with the Discord account that has your staff role.</p>
+    <button class="btn discord block" id="loginBtn" style="padding:13px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.4 18.4 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.6-13.6zM8 15.3c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.5 8 10.5s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4z"/></svg>
+      Continue with Discord
+    </button>
+    <p class="dim" style="font-size:13px;margin:18px 0 0">Demo mode: nothing is connected yet, so this signs you in with sample data.</p>
+    <a href="../index.html" style="font-size:14px">← Back to site</a>
+  </div>
+
+  <div id="app" hidden>
+    <header class="sp-top">
+      <div class="sp-row1">
+        <button class="icon-btn" id="menuBtn" aria-label="Open menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="crumbs"><a class="root" href="#/">Staff panel</a><span class="sep">›</span><span class="cur" id="crumb">Overview</span></div>
+      </div>
+      <div class="sp-row2">
+        <div class="chips">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M16 3.1a4 4 0 0 1 0 7.8"/></svg><span id="inGame">0 of 60 in-game</span></span>
+          <span class="chip" id="inQueue">0 in queue</span>
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5M7.8 16.2a6 6 0 0 1 0-8.5M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg><span id="onDuty">0 on duty</span></span>
+        </div>
+        <div class="shift">
+          <button class="shift-btn" id="profileBtn" title="Profile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c1-2 7-2 8 0"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <button class="shift-btn" id="shiftBtn"><span id="shiftLabel">Off shift</span> <span class="mono" id="shiftTime">00:00:00</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="drawer-backdrop" id="backdrop"></div>
+    <aside class="drawer" id="drawer">
+      <div class="drawer-head"><a class="brand" href="#/"><span class="brand-mark">CS</span>CSRP Staff</a></div>
+      <nav id="drawerNav"></nav>
+      <div class="drawer-foot">
+        <span class="avatar" style="background:linear-gradient(135deg,#f6a54d,#b85a12)">YO</span>
+        <div style="flex:1"><div style="font-weight:600">You</div><div class="dim" style="font-size:12px">Administrator</div></div>
+        <button class="btn sm" id="logoutBtn">Log out</button>
+      </div>
+    </aside>
+
+    <main class="sp-main" id="view"></main>
+  </div>
+
+  <div class="modal-bg" id="modalBg"><div class="card modal" id="modal"></div></div>
+  <div class="toast" id="toast"></div>
+
+  <script src="../assets/staff.js"></script>
+</body>
+</html>
