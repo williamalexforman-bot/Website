@@ -260,8 +260,17 @@ async function ingest(req, env) {
 }
 
 /* ---------------- Router ---------------- */
+// Short names people commonly use in their host's settings are accepted too.
+const ALIASES = { DISCORD_CLIENT_ID: ["CLIENT_ID"], DISCORD_CLIENT_SECRET: ["CLIENT_SECRET"], DISCORD_GUILD_ID: ["GUILD_ID", "SERVER_ID"], ERLC_SERVER_KEY: ["ERLC_KEY", "SERVER_KEY"] };
+function withAliases(env) {
+  const out = { ...env };
+  for (const [name, alts] of Object.entries(ALIASES)) if (!String(out[name] || "").trim()) out[name] = alts.map(a => env[a]).find(v => String(v || "").trim()) || out[name];
+  for (const k of Object.keys(out)) if (typeof out[k] === "string") out[k] = out[k].trim();
+  return out;
+}
+
 export async function handle(req, env, storeImpl) {
-  env = { ...env, STORE_IMPL: storeImpl };
+  env = { ...withAliases(env), STORE_IMPL: storeImpl };
   {
     const url = new URL(req.url), p = url.pathname;
     try {
