@@ -36,7 +36,7 @@ const FORMS = {
     q: [["Discord username","input"],["Current rank","input"],["How would you run a training session?","textarea"]]
   }
 };
-const slug = new URLSearchParams(location.search).get("f") || "staff-application";
+const slug = location.hash.slice(1) || new URLSearchParams(location.search).get("f") || "staff-application";
 const f = FORMS[slug] || FORMS["staff-application"];
 document.title = f.title + " · CSRP";
 const card = document.getElementById("formCard");

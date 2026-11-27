@@ -1,5 +1,6 @@
 /* California State Roleplay — shared styles */
 :root {
+  color-scheme: dark;
   --bg: #0b0d10;
   --bg-2: #111418;
   --panel: #13171c;

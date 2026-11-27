@@ -194,7 +194,7 @@ function fmtDate(t) {
 }
 const avatarColor = s => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return `linear-gradient(135deg,hsl(${h} 55% 55%),hsl(${(h + 40) % 360} 50% 30%))`; };
 const avatar = (name, size = 36) => `<span class="avatar" style="width:${size}px;height:${size}px;background:${avatarColor(name)};color:#fff">${esc(name.replace(/^.*\|\s*/, "").slice(0, 2).toUpperCase())}</span>`;
-const head = (title, sub = "") => `<a class="back" href="#/">${icon("arrowL", 16)} Back to Overview</a>
+const head = (title, sub = "") => `<a class="back" href="#overview">${icon("arrowL", 16)} Back to Overview</a>
 <div class="page-head"><div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div><button class="btn" data-refresh>Refresh</button></div>`;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2200); }
 function modal(html) { $("#modal").innerHTML = html; $("#modalBg").classList.add("open"); }
@@ -257,7 +257,7 @@ PAGES[""] = () => {
   const tickets = 0, ok5050 = wm >= QUOTA_MIN && tickets >= 2;
   return `<div class="ov-hello"><div class="muted">${greeting()}</div><h1>${esc(u.name)}</h1>
     <div class="ov-id">${icon("discord", 15)} Signed in as ${esc(u.name)}</div>
-    <div class="ov-id">${icon("roblox", 15)} ${u.roblox ? `Connected to Roblox ID ${esc(u.roblox)}` : `Roblox not linked · <a href="#/profile">link it</a>`}</div></div>
+    <div class="ov-id">${icon("roblox", 15)} ${u.roblox ? `Connected to Roblox ID ${esc(u.roblox)}` : `Roblox not linked · <a href="#profile">link it</a>`}</div></div>
   <div class="card shift-card">
     <div class="sc-lab">${shiftStart ? "On shift" : "Off shift"}</div>
     <div class="sc-time mono" data-shift-time>00:00:00</div>
@@ -275,7 +275,7 @@ PAGES[""] = () => {
     </div>
     <div class="sc-foot"><span>${icon("clock", 15)} Resets in ${resetsIn()}</span><span>${icon("history", 15)} ${shiftsWeek} shift${shiftsWeek === 1 ? "" : "s"} this week</span></div>
   </div>
-  <div class="card list-card ov-card"><div class="lc-head split-head">Recent punishments <a href="#/punishments">See all</a></div>
+  <div class="card list-card ov-card"><div class="lc-head split-head">Recent punishments <a href="#punishments">See all</a></div>
     ${DATA.punishments.slice(0, 5).map(p => `<div class="ov-pun"><div class="split-head"><b>${esc(p.player)}</b><span class="pill">${esc(p.action)}</span></div><div>${esc(p.reason)}</div><div class="muted">${esc(p.mod)}, ${agoShort(p.at)}</div></div>`).join("")}
   </div>
   <div class="card list-card ov-card"><div class="lc-head">Quick actions</div>
@@ -398,22 +398,22 @@ PAGES.activity = () => {
 PAGES.guide = () => `${head("Guide")}
   <p class="muted" style="margin-top:-6px">Pick the guide you need. The instructor guide is only for Staff Trainers and HR.</p>
   <div class="grid-2">
-    <div class="card guide-card"><span class="t-ico">${icon("book")}</span><h3>Staff guide</h3><p>Rules, how to punish them, the panel and the in-game commands.</p><a class="go" href="#/guide-staff">Open guide ${icon("arrowR", 14)}</a></div>
-    <div class="card guide-card"><span class="t-ico">${icon("grad")}</span><h3>Staff instructor</h3><p>Running Moderation Training: hosting phases and checking marks.</p><a class="go" href="#/guide-instructor">Open guide ${icon("arrowR", 14)}</a></div>
+    <div class="card guide-card"><span class="t-ico">${icon("book")}</span><h3>Staff guide</h3><p>Rules, how to punish them, the panel and the in-game commands.</p><a class="go" href="#guide-staff">Open guide ${icon("arrowR", 14)}</a></div>
+    <div class="card guide-card"><span class="t-ico">${icon("grad")}</span><h3>Staff instructor</h3><p>Running Moderation Training: hosting phases and checking marks.</p><a class="go" href="#guide-instructor">Open guide ${icon("arrowR", 14)}</a></div>
     <div class="card guide-card locked"><span class="t-ico">${icon("shield")}</span><h3>IA handbook</h3><p>Only the Internal Affairs team can open this one.</p><span class="pill">Locked</span></div>
   </div>`;
-const guidePage = (title, secs) => `<a class="back" href="#/guide">${icon("arrowL", 16)} Back to Guide</a>
+const guidePage = (title, secs) => `<a class="back" href="#guide">${icon("arrowL", 16)} Back to Guide</a>
   <div class="page-head"><div><h1>${title}</h1></div></div>
   ${secs.map(([h, items]) => `<div class="card pad" style="margin-bottom:14px"><h2 style="font-size:20px;margin-bottom:10px">${h}</h2><ul class="guide-list">${items.map(i => `<li>${i}</li>`).join("")}</ul></div>`).join("")}`;
 PAGES["guide-staff"] = () => guidePage("Staff guide", [
   ["Common rules", ["<b>RDM</b>: killing without a roleplay reason.", "<b>VDM</b>: using a vehicle as a weapon without a reason.", "<b>NLR</b>: after death, forget what led to it and don't return to the scene.", "<b>Tool abuse</b>: using items (pepper spray, spikes, cuffs) to troll.", "<b>FRP</b>: fail roleplay, doing things your character couldn't realistically do."]],
   ["Punishment ladder", ["1st offense: Warning", "2nd offense: Kick", "3rd offense: 1 day ban", "4th offense: 3 day ban, then HR review", "Exploiting or hate speech: permanent ban straight away"]],
-  ["Using the panel", ["Start a shift before you moderate. Breaks are not counted.", "Log every warning, kick and ban in <a href='#/punishments'>Punishments</a> with a clear reason.", "Check a player's history in <a href='#/players'>Players</a> before you punish.", "Request leave in <a href='#/timeoff'>Time off</a> before you go inactive."]],
+  ["Using the panel", ["Start a shift before you moderate. Breaks are not counted.", "Log every warning, kick and ban in <a href='#punishments'>Punishments</a> with a clear reason.", "Check a player's history in <a href='#players'>Players</a> before you punish.", "Request leave in <a href='#timeoff'>Time off</a> before you go inactive."]],
   ["In-game commands", DATA.commands.map(c => `<code>${esc(c[3])}</code>: ${c[1]}`)],
 ]);
 PAGES["guide-instructor"] = () => guidePage("Staff instructor guide", [
   ["Phase 1", ["Trial Moderators start with <code>/requesttraining phase:1</code> in their DMs.", "10 questions, 150 seconds each, pass mark 8/10, up to 3 attempts a day."]],
-  ["Marking", ["Open the session in <a href='#/training'>Staff training</a> and read every answer.", "Mark answers that show the right idea, even if worded differently.", "Leave a short note on every failed answer so the trainee can learn."]],
+  ["Marking", ["Open the session in <a href='#training'>Staff training</a> and read every answer.", "Mark answers that show the right idea, even if worded differently.", "Leave a short note on every failed answer so the trainee can learn."]],
   ["Phase 2", ["Host an in-game shadow shift of at least 30 minutes.", "The trainee handles calls; you step in only if needed.", "Pass or fail them in the training channel with a short summary."]],
 ]);
 
@@ -536,11 +536,11 @@ PAGES.punishments = () => `${head("Punishments")}
     <select class="input" id="pt"><option value="">All actions</option><option>Warning</option><option>Kick</option><option>Temp ban</option><option>Ban</option></select>
     <button class="btn primary block" style="margin-top:14px">Search</button>
   </form>
-  <div class="split"><a class="btn" href="#/players">${icon("search", 16)} Search Players</a><button class="btn" id="logP">Log punishment</button></div>
+  <div class="split"><a class="btn" href="#players">${icon("search", 16)} Search Players</a><button class="btn" id="logP">Log punishment</button></div>
   <div class="table-wrap"><table class="tbl"><thead><tr><th>Action</th><th>Player</th><th>Roblox ID</th><th>Reason</th><th>Duration</th><th>Moderator</th><th>Recorded</th></tr></thead><tbody id="pBody"></tbody></table></div>`;
 function renderPunishRows(q = "", t = "") {
   const rows = DATA.punishments.filter(p => (!t || p.action === t) && (!q || p.player.toLowerCase().includes(q.toLowerCase()) || String(p.id).includes(q)));
-  $("#pBody").innerHTML = rows.length ? rows.map(p => `<tr><td>${esc(p.action)}</td><td><a class="player-link" href="#/players">${esc(p.player)}</a></td><td>${p.id}</td><td style="min-width:180px">${esc(p.reason)}</td><td>${esc(p.duration)}</td><td>${esc(p.mod)}</td><td style="white-space:nowrap">${fmtDate(p.at)}</td></tr>`).join("") : `<tr><td colspan="7" class="muted">No punishments found.</td></tr>`;
+  $("#pBody").innerHTML = rows.length ? rows.map(p => `<tr><td>${esc(p.action)}</td><td><a class="player-link" href="#players">${esc(p.player)}</a></td><td>${p.id}</td><td style="min-width:180px">${esc(p.reason)}</td><td>${esc(p.duration)}</td><td>${esc(p.mod)}</td><td style="white-space:nowrap">${fmtDate(p.at)}</td></tr>`).join("") : `<tr><td colspan="7" class="muted">No punishments found.</td></tr>`;
 }
 PAGES.punishments.after = () => {
   renderPunishRows();
@@ -763,11 +763,11 @@ PAGES.staff.after = () => {
 PAGES.forms = () => `${head("Forms")}
   <button class="btn" id="newForm" style="margin-bottom:16px">New form</button>
   ${DATA.forms.map(f => `<div class="card form-row"><div><h3>${esc(f.title)}</h3><span class="pill ${f.open ? "green" : ""}">${f.open ? "Open" : "Closed"}</span>
-    <div class="muted" style="margin-top:6px">${f.resp} · <a href="../forms.html?f=${f.slug}">csrp/forms/${f.slug}</a></div></div>
+    <div class="muted" style="margin-top:6px">${f.resp} · <a href="../forms.html#${f.slug}">csrp/forms/${f.slug}</a></div></div>
     <div class="actions"><button class="btn" data-copy="${f.slug}">Copy link</button><button class="btn" data-resp>Responses</button><button class="btn" data-edit>Edit</button></div></div>`).join("")}`;
 PAGES.forms.after = () => {
   document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => {
-    const url = new URL(`../forms.html?f=${b.dataset.copy}`, location.href).href;
+    const url = new URL(`../forms.html#${b.dataset.copy}`, location.href).href;
     try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { toast(url); }
   }));
   document.querySelectorAll("[data-resp],[data-edit],#newForm").forEach(b => b.addEventListener("click", () => toast("Form builder isn't connected yet (demo)")));
@@ -816,7 +816,7 @@ PAGES.leaderboard.after = () => {
 /* ---------------- Shell ---------------- */
 function buildNav(cur) {
   const active = cur.startsWith("guide") ? "guide" : cur;
-  $("#drawerNav").innerHTML = NAV.map(([g, items]) => `<div class="grp">${g}</div>${items.map(([k, t, ic]) => `<a class="item ${k === active ? "active" : ""}" href="#/${k}">${icon(ic)}${t}</a>`).join("")}`).join("")
+  $("#drawerNav").innerHTML = NAV.map(([g, items]) => `<div class="grp">${g}</div>${items.map(([k, t, ic]) => `<a class="item ${k === active ? "active" : ""}" href="#${k || "overview"}">${icon(ic)}${t}</a>`).join("")}`).join("")
     + `<div class="grp">Verified Staff</div><a class="item" href="#" data-signout>${icon("logout")}Sign out</a>`;
   $("[data-signout]").addEventListener("click", e => { e.preventDefault(); signOut(); });
 }
@@ -878,7 +878,7 @@ $("#profileMenu").addEventListener("click", e => { if (e.target.closest("a")) $(
 
 /* Demo login */
 function enter() { $("#login").hidden = true; $("#app").hidden = false; startTicker(); route(); }
-function signOut() { store.del("csrp_demo_login"); location.hash = ""; $("#app").hidden = true; $("#login").hidden = false; setDrawer(false); }
+function signOut() { store.del("csrp_demo_login"); location.hash = "overview"; $("#app").hidden = true; $("#login").hidden = false; setDrawer(false); }
 $("#loginBtn").addEventListener("click", () => { store.set("csrp_demo_login", "1"); enter(); });
 window.addEventListener("hashchange", () => { if (!$("#app").hidden) route(); });
 if (store.get("csrp_demo_login")) enter(); else $("#login").hidden = false;
