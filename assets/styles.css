@@ -440,3 +440,14 @@ table.hm { border-collapse: collapse; font: 11px var(--mono); width: 100%; }
 .mail-row.unread .subj { font-weight: 600; }
 .mail-row.unread b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: middle; }
 .grid-2 > *, .grid-3 > * { min-width: 0; }
+
+/* ---------- Live panel additions ---------- */
+.nav-btn { background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font: 500 15px var(--head); }
+.nav-btn:hover { color: var(--text); }
+img.avatar { object-fit: cover; display: block; }
+.nl { display: flex; gap: 16px; align-items: flex-start; }
+.nl .t-ico { flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.nl b { font-family: var(--head); font-size: 17px; }
+.nl p { margin: 6px 0 0; line-height: 1.55; }
+a.qa { text-decoration: none; }
+@media (max-width: 860px) { .nav-links .nav-btn { padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; } }

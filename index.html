@@ -4,45 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>California State Roleplay</title>
-  <meta name="description" content="California State Roleplay — a serious, community-driven roleplay server.">
+  <meta name="description" content="California State Roleplay: community site and staff panel.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
+<div id="site">
   <header class="site-nav">
-    <a class="brand" href="index.html"><span class="brand-mark">CS</span>California State Roleplay</a>
+    <a class="brand" href="#home"><span class="brand-mark">CS</span>California State Roleplay</a>
     <nav class="nav-links" id="navLinks">
-      <a href="#about">About</a>
-      <a href="#departments">Departments</a>
-      <a href="#rules">Rules</a>
-      <a href="#apply">Apply</a>
-      <a class="btn primary" href="staff-dashboard/">Staff panel</a>
+      <button class="nav-btn" data-scroll="sec-about">About</button>
+      <button class="nav-btn" data-scroll="sec-departments">Departments</button>
+      <button class="nav-btn" data-scroll="sec-rules">Rules</button>
+      <button class="nav-btn" data-scroll="sec-apply">Apply</button>
+      <a class="btn primary" href="#overview">Staff panel</a>
     </nav>
-    <button class="icon-btn nav-toggle" aria-label="Menu" onclick="document.getElementById('navLinks').classList.toggle('open')">
+    <button class="icon-btn nav-toggle" id="navToggle" aria-label="Menu">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
   </header>
-
   <main>
     <section class="hero">
       <span class="eyebrow"><span class="dot"></span>Server sessions running daily</span>
       <h1>Welcome to <span class="grad">California State Roleplay</span></h1>
-      <p class="lead">A serious roleplay community built around realistic policing, fire &amp; rescue, and civilian life across the Golden State. Join the Discord, pick a department, and make your story.</p>
+      <p class="lead">A serious roleplay community built around realistic policing, fire &amp; rescue, and civilian life across the Golden State. Pick a department and make your story.</p>
       <div class="cta">
-        <a class="btn primary" href="#" onclick="return false;">Join our Discord</a>
-        <a class="btn" href="#apply">Apply for staff</a>
-      </div>
-      <div class="stats-strip">
-        <div class="card stat"><div class="num">4,200+</div><div class="lab">Discord members</div></div>
-        <div class="card stat"><div class="num">60</div><div class="lab">Server slots</div></div>
-        <div class="card stat"><div class="num">80+</div><div class="lab">Active staff</div></div>
-        <div class="card stat"><div class="num">6</div><div class="lab">Departments</div></div>
+        <a class="btn primary" href="#overview">Staff panel</a>
+        <button class="btn" data-scroll="sec-apply">Apply for staff</button>
       </div>
     </section>
 
-    <section class="section" id="about">
+    <section class="section" id="sec-about">
       <div class="section-head">
         <h2>Why play with us</h2>
         <p>Everything about CSRP is built to keep roleplay fair, fun, and consistent, from fast staff response to departments with real structure.</p>
@@ -66,7 +60,7 @@
       </div>
     </section>
 
-    <section class="section" id="departments">
+    <section class="section" id="sec-departments">
       <div class="section-head">
         <h2>Departments</h2>
         <p>Pick where you want to serve. Each department has its own Discord, training, and ranks.</p>
@@ -81,7 +75,7 @@
       </div>
     </section>
 
-    <section class="section" id="rules">
+    <section class="section" id="sec-rules">
       <div class="section-head">
         <h2>Core rules</h2>
         <p>The short version. The full rulebook lives in the Discord.</p>
@@ -95,23 +89,82 @@
       </div>
     </section>
 
-    <section class="section" id="apply">
+    <section class="section" id="sec-apply">
       <div class="card cta-band">
         <div>
           <h2>Want to join the staff team?</h2>
           <p class="muted" style="margin:0">Staff applications are open. Read the requirements in the Discord, then apply.</p>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <a class="btn primary" href="forms.html#staff-application">Staff application</a>
-          <a class="btn" href="forms.html#appeals">Appeal a punishment</a>
+          <a class="btn primary" href="#apply-staff-application">Staff application</a>
+          <a class="btn" href="#apply-appeals">Appeal a punishment</a>
         </div>
       </div>
     </section>
   </main>
-
   <footer class="footer">
     <span>© 2026 California State Roleplay. Not affiliated with Roblox Corporation.</span>
-    <span><a href="staff-dashboard/">Staff panel</a> · <a href="forms.html#appeals">Appeals</a></span>
+    <span><a href="#overview">Staff panel</a> · <a href="#apply-appeals">Appeals</a></span>
   </footer>
+</div>
+
+<div id="formView" hidden>
+  <header class="site-nav">
+    <a class="brand" href="#home"><span class="brand-mark">CS</span>California State Roleplay</a>
+    <a class="btn" href="#home">Home</a>
+  </header>
+  <main class="narrow"><div class="card pad" id="formCard"></div></main>
+</div>
+
+<div id="app" hidden>
+  <div id="gate" class="card login">
+    <span class="brand-mark" style="margin:0 auto;width:56px;height:56px;font-size:20px;border-radius:14px">CS</span>
+    <h1 id="gateTitle">Connecting…</h1>
+    <p id="gateText">Loading the staff panel.</p>
+    <a href="#home" style="font-size:14px">← Back to site</a>
+  </div>
+  <div id="panel" hidden>
+    <header class="sp-top">
+      <div class="sp-row1">
+        <button class="icon-btn" id="menuBtn" aria-label="Open menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="crumbs"><a class="root" href="#overview">Staff panel</a><span class="sep">›</span><span class="cur" id="crumb">Overview</span></div>
+      </div>
+      <div class="sp-row2">
+        <div class="chips">
+          <span class="chip">Game not linked</span>
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5M7.8 16.2a6 6 0 0 1 0-8.5M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg><span id="onDuty">0 on duty</span></span>
+        </div>
+        <div class="shift">
+          <div style="position:relative">
+          <button class="shift-btn" id="profileBtn" title="Profile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c1-2 7-2 8 0"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="pmenu card" id="profileMenu" hidden>
+            <a href="#profile">Profile</a><a href="#shifts">My shifts</a><a href="#timeoff">Time off</a><a href="#home">Back to website</a>
+          </div>
+          </div>
+          <button class="shift-btn" id="shiftBtn"><span id="shiftLabel">Off shift</span> <span class="mono" id="shiftTime" data-shift-time>00:00:00</span></button>
+        </div>
+      </div>
+    </header>
+    <div class="drawer-backdrop" id="backdrop"></div>
+    <aside class="drawer" id="drawer">
+      <div class="drawer-head">
+        <span class="brand-mark">CS</span>
+        <div style="flex:1"><div class="dh-title">California State Roleplay</div><div class="dim" style="font-size:14px">Staff Panel</div></div>
+        <button class="icon-btn" id="drawerClose" aria-label="Close menu" style="border:0;width:32px;height:32px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
+      <nav id="drawerNav"></nav>
+    </aside>
+    <main class="sp-main" id="view"></main>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="card modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="assets/app.js"></script>
 </body>
 </html>
