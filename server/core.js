@@ -207,7 +207,7 @@ async function logToDiscord(env, s, col, id, before, after, method) {
 }
 
 /* ---------------- ER:LC API ---------------- */
-const erlcFetch = (env, path, init = {}) => fetch((env.ERLC_BASE || "https://api.policeroleplay.community") + path, { ...init, headers: { "server-key": env.ERLC_SERVER_KEY, ...(init.headers || {}) } });
+const erlcFetch = (env, path, init = {}) => fetch((env.ERLC_BASE || "https://api.erlc.gg") + path, { ...init, headers: { "server-key": env.ERLC_SERVER_KEY, ...(init.headers || {}) } });
 const ERLC_PATHS = { server: "/v1/server", players: "/v1/server/players", queue: "/v1/server/queue", killlogs: "/v1/server/killlogs", joinlogs: "/v1/server/joinlogs", commandlogs: "/v1/server/commandlogs", modcalls: "/v1/server/modcalls", staff: "/v1/server/staff", vehicles: "/v1/server/vehicles" };
 const cache = new Map();
 async function erlc(req, env, s, kind) {
