@@ -1,7 +1,13 @@
-name = "csrp"
+name = "website"
 main = "worker/index.js"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Keep the settings added in Cloudflare's dashboard when a new version deploys.
+keep_vars = true
+# Settings to add in the dashboard (Worker > Settings > Variables and Secrets):
+#   Text:   DISCORD_GUILD_ID, STAFF_ROLE_IDS, HR_ROLE_IDS, OWNER_IDS   (comma-separated Discord ids)
+#   Secret: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET, ERLC_SERVER_KEY, BOT_INGEST_SECRET, ANTHROPIC_API_KEY (optional)
 
 # The site's pages and files. Requests that don't match a file go to the worker.
 [assets]
@@ -16,9 +22,3 @@ class_name = "Store"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Store"]
-
-# Keep the settings added in Cloudflare's dashboard when a new version deploys.
-keep_vars = true
-# Settings to add in the dashboard (Worker > Settings > Variables and Secrets):
-#   Text:   DISCORD_GUILD_ID, STAFF_ROLE_IDS, HR_ROLE_IDS, OWNER_IDS   (comma-separated Discord ids)
-#   Secret: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET, ERLC_SERVER_KEY, BOT_INGEST_SECRET, ANTHROPIC_API_KEY (optional)
