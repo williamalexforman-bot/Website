@@ -67,9 +67,14 @@ async function readSession(req, env) {
 const SIGNIN_VARS = ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "SESSION_SECRET", "DISCORD_GUILD_ID"];
 const missingSignIn = env => SIGNIN_VARS.filter(k => !String(env[k] || "").trim());
 // Which settings the server can see (yes/no only, never values), for setup checks.
-function health(env) {
-  const names = [...SIGNIN_VARS, "STAFF_ROLE_IDS", "HR_ROLE_IDS", "OWNER_IDS", "ERLC_SERVER_KEY", "BOT_INGEST_SECRET", "ANTHROPIC_API_KEY"];
-  return json({ settings: Object.fromEntries(names.map(k => [k, !!String(env[k] || "").trim()])), missingForSignIn: missingSignIn(env) });
+async function health(env) {
+  const names = [...SIGNIN_VARS, "STAFF_ROLE_IDS", "HR_ROLE_IDS", "OWNER_IDS", "ERLC_SERVER_KEY", "BOT_INGEST_SECRET", "DISCORD_LOG_WEBHOOK", "DISCORD_GAME_LOG_WEBHOOK", "ANTHROPIC_API_KEY"];
+  let erlcStatus = "no key";
+  if (env.ERLC_SERVER_KEY) {
+    try { const r = await erlcFetch(env, "/v1/server"); erlcStatus = r.ok ? "connected" : r.status === 401 || r.status === 403 ? "key rejected by ER:LC" : r.status === 429 ? "rate limited, try again" : "ER:LC error " + r.status; }
+    catch { erlcStatus = "unreachable"; }
+  }
+  return json({ settings: Object.fromEntries(names.map(k => [k, !!String(env[k] || "").trim()])), missingForSignIn: missingSignIn(env), erlc: erlcStatus });
 }
 const DISCORD = "https://discord.com/api/v10";
 async function login(req, env) {
@@ -131,11 +136,12 @@ async function dbApi(req, env, s, parts) {
     const newId = crypto.randomUUID().replace(/-/g, "").slice(0, 20);
     if (!canWrite(col, newId, s)) return err(403, "Not allowed");
     if ((await st.count()) > 25000) return err(507, "Storage full");
-    await st.set(col, newId, guard(col, newId, body.data, s)); return json({ id: newId });
+    const doc = guard(col, newId, body.data, s);
+    await st.set(col, newId, doc); await logToDiscord(env, s, col, newId, null, doc, "POST"); return json({ id: newId });
   }
   if (!canWrite(col, id, s)) return err(403, "Not allowed");
-  if (req.method === "PUT") { await st.set(col, id, guard(col, id, body.data, s, await st.get(col, id))); return json({ ok: true }); }
-  if (req.method === "PATCH") { return (await st.update(col, id, guard(col, id, body.data, s))) ? json({ ok: true }) : err(404, "Not found"); }
+  if (req.method === "PUT") { const before = await st.get(col, id), doc = guard(col, id, body.data, s, before); await st.set(col, id, doc); await logToDiscord(env, s, col, id, before, doc, "PUT"); return json({ ok: true }); }
+  if (req.method === "PATCH") { const before = await st.get(col, id); if (!(await st.update(col, id, guard(col, id, body.data, s)))) return err(404, "Not found"); await logToDiscord(env, s, col, id, before, await st.get(col, id), "PATCH"); return json({ ok: true }); }
   if (req.method === "DELETE") { await st.delete(col, id); return json({ ok: true }); }
   return err(405, "Method not allowed");
 }
@@ -161,13 +167,47 @@ async function sync(req, env, s) {
   return json({ results });
 }
 
+/* ---------------- Discord logs (webhooks) ---------------- */
+const isHook = u => /^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/.test(String(u || ""));
+const clip = (v, n) => { const t = String(v ?? ""); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+// Discord markdown in user text is neutralised so names and reasons can't ping or format.
+const plain = v => clip(v, 900).replace(/([\\*_~`|>#@\[\]()-])/g, "\\$1");
+async function postDiscord(url, body) {
+  if (!isHook(url)) return;
+  try {
+    const r = await fetch(url + "?wait=false", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "CSRP Panel", allowed_mentions: { parse: [] }, ...body }) });
+    if (!r.ok) console.warn("Discord webhook", r.status);
+  } catch (e) { console.warn("Discord webhook failed", e?.message); }
+}
+const panelLog = (env, body) => postDiscord(env.DISCORD_LOG_WEBHOOK, body);
+const gameLog = (env, body) => postDiscord(env.DISCORD_GAME_LOG_WEBHOOK || env.DISCORD_LOG_WEBHOOK, body);
+const COLORS = { blue: 0x6cc4f5, red: 0xf06363, yellow: 0xe6b54a, green: 0x4cc38a, grey: 0x9aa3ad };
+// Panel actions that already get their own detailed message are skipped in the activity feed.
+const DETAILED = new Set(["Recorded a punishment", "Requested staff", "Resolved a staff request"]);
+async function logToDiscord(env, s, col, id, before, after, method) {
+  if (!env.DISCORD_LOG_WEBHOOK) return;
+  if (col === "log" && method === "PUT") {
+    const last = Math.max(0, ...((before?.items) || []).map(i => +i.at || 0));
+    const fresh = ((after?.items) || []).filter(i => +i.at > last && !DETAILED.has(i.action)).slice(0, 5).reverse();
+    for (const i of fresh) await panelLog(env, { embeds: [{ color: COLORS.blue, description: `**${plain(s.name)}** ${plain(String(i.action || "").toLowerCase())}${i.target ? ` · ${plain(i.target)}` : ""}`, timestamp: new Date(+i.at || Date.now()).toISOString() }] });
+  }
+  if (col === "punishments" && method === "POST") {
+    const p = after || {};
+    await panelLog(env, { embeds: [{ color: p.action === "Warning" ? COLORS.yellow : COLORS.red, title: `${clip(p.action, 40)}: ${clip(p.player, 80)}`,
+      fields: [{ name: "Reason", value: plain(p.reason) || "-" }, ...(p.robloxId ? [{ name: "Roblox ID", value: plain(p.robloxId), inline: true }] : []), ...(p.duration ? [{ name: "Duration", value: plain(p.duration), inline: true }] : []), { name: "Moderator", value: plain(s.name), inline: true }],
+      timestamp: new Date().toISOString() }] });
+  }
+  if (col === "alerts" && method === "POST") await panelLog(env, { embeds: [{ color: COLORS.red, title: "Staff requested", description: plain(after?.text), footer: { text: "Requested by " + clip(s.name, 60) }, timestamp: new Date().toISOString() }] });
+  if (col === "alerts" && method === "PATCH" && after?.resolved && !before?.resolved) await panelLog(env, { embeds: [{ color: COLORS.green, description: `Staff request resolved by **${plain(s.name)}**: ${plain(before?.text)}` }] });
+}
+
 /* ---------------- ER:LC API ---------------- */
+const erlcFetch = (env, path, init = {}) => fetch((env.ERLC_BASE || "https://api.policeroleplay.community") + path, { ...init, headers: { "server-key": env.ERLC_SERVER_KEY, ...(init.headers || {}) } });
 const ERLC_PATHS = { server: "/v1/server", players: "/v1/server/players", queue: "/v1/server/queue", killlogs: "/v1/server/killlogs", joinlogs: "/v1/server/joinlogs", commandlogs: "/v1/server/commandlogs", modcalls: "/v1/server/modcalls", staff: "/v1/server/staff", vehicles: "/v1/server/vehicles" };
 const cache = new Map();
 async function erlc(req, env, s, kind) {
   if (lv(s) < ORDER.staff) return err(403, "Staff only");
   if (!env.ERLC_SERVER_KEY) return err(503, "The ER:LC server key isn't set up yet.");
-  const base = env.ERLC_BASE || "https://api.policeroleplay.community";
   if (kind === "command" && req.method === "POST") {
     const { command } = await req.json().catch(() => ({}));
     const cmd = String(command || "").trim();
@@ -175,23 +215,55 @@ async function erlc(req, env, s, kind) {
     const name = cmd.slice(1).split(/\s+/)[0].toLowerCase();
     const STAFF_CMDS = ["h", "m", "pm", "kick", "tp", "bring", "heal", "respawn", "refresh", "jail", "unjail", "wanted", "unwanted", "log"];
     if (!STAFF_CMDS.includes(name) && lv(s) < ORDER.admin) return err(403, `Only HR can run :${name}.`);
-    const r = await fetch(base + "/v1/server/command", { method: "POST", headers: { "server-key": env.ERLC_SERVER_KEY, "content-type": "application/json" }, body: JSON.stringify({ command: cmd }) });
+    const r = await erlcFetch(env, "/v1/server/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ command: cmd }) });
     if (!r.ok) return err(r.status === 429 ? 429 : 502, r.status === 429 ? "ER:LC is rate limiting. Try again in a few seconds." : "ER:LC didn't accept the command.");
     const st = store(env), cur = await st.get("log", s.id);
     await st.set("log", s.id, { items: [{ at: Date.now(), action: "Ran a command", target: cmd.slice(0, 80) }, ...(cur?.items || [])].slice(0, 150) });
+    await panelLog(env, { embeds: [{ color: name === "ban" || name === "kick" ? COLORS.red : COLORS.grey, description: `**${plain(s.name)}** ran \`${clip(cmd, 200).replace(/`/g, "'")}\` from the panel`, timestamp: new Date().toISOString() }] });
     return json({ ok: true });
   }
   const path = ERLC_PATHS[kind]; if (!path || req.method !== "GET") return err(404, "Unknown");
   const hit = cache.get(kind);
   if (hit && Date.now() - hit.at < 15000) return json(hit.data);
-  const r = await fetch(base + path, { headers: { "server-key": env.ERLC_SERVER_KEY } });
+  const r = await erlcFetch(env, path);
   if (!r.ok) { if (hit) return json(hit.data); return err(r.status === 429 ? 429 : 502, "Couldn't reach the ER:LC server."); }
   const data = await r.json();
   cache.set(kind, { at: Date.now(), data });
   return json(data);
 }
 
-/* ---------------- Claude (Ask Goldie, Suggestions) ---------------- */
+/* ---------------- ER:LC logs to Discord (runs every minute) ---------------- */
+// Remembers the newest timestamp it posted per log, so each entry goes to Discord once.
+// The first run only records where to start, so old history isn't dumped into the channel.
+const who = v => { const [name, id] = String(v || "").split(":"); return { name: name || "Unknown", id: id || "" }; };
+const GAME_FEEDS = {
+  killlogs: { title: "Kills", color: COLORS.red, line: e => `**${plain(who(e.Killer).name)}** killed **${plain(who(e.Killed).name)}**` },
+  joinlogs: { title: "Joins and leaves", color: COLORS.grey, line: e => `**${plain(who(e.Player).name)}** ${e.Join ? "joined" : "left"}` },
+  commandlogs: { title: "In-game commands", color: COLORS.blue, line: e => `**${plain(who(e.Player).name)}**: \`${clip(e.Command, 150).replace(/`/g, "'")}\`` },
+  modcalls: { title: "Mod calls", color: COLORS.yellow, line: e => `**${plain(who(e.Caller).name)}** called a mod${e.Moderator ? ` · answered by **${plain(who(e.Moderator).name)}**` : ""}` },
+};
+export async function gameLogTick(env, st) {
+  env = withAliases(env);
+  if (!env.ERLC_SERVER_KEY || !(env.DISCORD_GAME_LOG_WEBHOOK || env.DISCORD_LOG_WEBHOOK)) return;
+  const marks = (await st.get("sys", "gamelog")) || {}, next = { ...marks };
+  for (const [kind, feed] of Object.entries(GAME_FEEDS)) {
+    let rows;
+    try { const r = await erlcFetch(env, ERLC_PATHS[kind]); if (!r.ok) continue; rows = await r.json(); } catch { continue; }
+    if (!Array.isArray(rows)) continue;
+    const newest = Math.max(marks[kind] || 0, ...rows.map(e => +e.Timestamp || 0));
+    if (marks[kind] !== undefined) {
+      const fresh = rows.filter(e => +e.Timestamp > marks[kind]).sort((a, b) => a.Timestamp - b.Timestamp);
+      for (let i = 0; i < fresh.length; i += 25) {
+        const chunk = fresh.slice(i, i + 25);
+        await gameLog(env, { embeds: [{ color: feed.color, title: feed.title, description: chunk.map(e => `<t:${e.Timestamp}:T> ${feed.line(e)}`).join("\n").slice(0, 4000) }] });
+      }
+    }
+    next[kind] = newest;
+  }
+  await st.set("sys", "gamelog", next);
+}
+
+/* ---------------- Claude (AI Suggestions) ---------------- */
 const aiUse = new Map();
 async function ai(req, env, s) {
   if (lv(s) < ORDER.staff) return err(403, "Staff only");
@@ -291,7 +363,7 @@ export async function handle(req, env, storeImpl) {
       if (p === "/auth/callback") return await callback(req, env);
       if (p === "/auth/logout") return new Response(null, { status: 302, headers: { location: "/", "set-cookie": cookie("csrp_s", "", 0) } });
       if (p === "/api/bot/ingest" && req.method === "POST") return await ingest(req, env);
-      if (p === "/api/health") return health(env);
+      if (p === "/api/health") return await health(env);
       if (p.startsWith("/api/")) {
         // Same-origin only for writes (cookies are SameSite=Lax; this blocks cross-site form posts too).
         if (req.method !== "GET" && req.headers.get("origin") && req.headers.get("origin") !== url.origin) return err(403, "Bad origin");

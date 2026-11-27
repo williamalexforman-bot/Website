@@ -1,7 +1,7 @@
 // California State Roleplay on Cloudflare Workers (optional host; Netlify is the main one).
 // Serves /public through the ASSETS binding and keeps panel data in a SQLite Durable Object.
 import { DurableObject } from "cloudflare:workers";
-import { handle, merge } from "../server/core.js";
+import { handle, merge, gameLogTick } from "../server/core.js";
 
 export class Store extends DurableObject {
   constructor(ctx, env) {
@@ -29,5 +29,9 @@ export default {
   async fetch(req, env) {
     const res = await handle(req, env, env.STORE.get(env.STORE.idFromName("csrp")));
     return res || env.ASSETS.fetch(req);
+  },
+  // Every minute: copy new ER:LC kills, joins, commands and mod calls to Discord.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(gameLogTick(env, env.STORE.get(env.STORE.idFromName("csrp"))));
   },
 };

@@ -212,7 +212,7 @@ async function boot() {
 /* ================= Navigation ================= */
 const NAV = [
   ["Me", [["overview", "Overview", "grid"], ["shifts", "My shifts", "clock"], ["profile", "Profile", "idcard"], ["timeoff", "Time off", "plane"], ["activity", "My activity", "history"], ["guide", "Guide", "book"]]],
-  ["Staff", [["onduty", "On duty", "radio"], ["coverage", "Coverage", "pulse"], ["leaderboard", "Leaderboard", "trophy"], ["departments", "Departments", "shield"], ["assistant", "Ask Goldie", "chat"], ["forms", "Forms", "form"]]],
+  ["Staff", [["onduty", "On duty", "radio"], ["coverage", "Coverage", "pulse"], ["leaderboard", "Leaderboard", "trophy"], ["departments", "Departments", "shield"], ["forms", "Forms", "form"]]],
   ["HR", [["staff", "Staff management", "users"], ["ai", "Suggestions", "clipboard"], ["training", "Staff training", "grad"], ["leavers", "Staff leavers", "alert"], ["transcripts", "Transcripts", "scroll"], ["log", "Website log", "pulse"]]],
   ["In game", [["map", "Map", "pin"], ["players", "Players", "search"], ["vision", "Vision", "eye"], ["commands", "Commands", "term"], ["punishments", "Punishments", "gavel"]]],
 ];
@@ -630,49 +630,6 @@ PAGES.departments.after = () => {
     modal(`<h3>Delete department?</h3><p class="muted">This removes the department and its member list for everyone.</p><div class="actions"><button class="btn" data-close>Cancel</button><button class="btn primary" id="cDel">Delete</button></div>`);
     $("#cDel").addEventListener("click", () => { closeModal(); save("departments/" + b.dataset.deld, () => S.db.doc("departments/" + b.dataset.deld).delete(), "Department deleted"); });
   }));
-};
-
-/* ---------- Ask Goldie (real AI) ---------- */
-const BOT = "Goldie";
-const chat = [];
-function rulesContext() {
-  return `You are ${BOT}, the staff assistant for California State Roleplay (CSRP), an ER:LC roleplay server. Answer staff questions briefly and casually, in lowercase, like a helpful senior staff member.
-Rules: RDM = killing without a roleplay reason. VDM = vehicle used as a weapon without reason. NLR = new life rule: after death forget events leading to it and don't return to the scene. Tool abuse = using items (pepper spray, spikes, cuffs) to troll. FRP = fail roleplay.
-Punishment ladder: 1st warning, 2nd kick, 3rd 1 day ban, 4th 3 day ban then HR review. Exploiting or hate speech: permanent ban.
-Commands: ${COMMANDS.map(c => c[3] + " (" + c[2] + ")").join("; ")}.
-Live panel facts: ${onDutyIds().length} staff on shift now. ${S.punishments.length} punishments logged. Weekly shift quota ${fmtMin(quota())}. Who is in the game server right now is not available (no in-game connection).
-HR is the panel's HR team; time off is requested on the Time off page. If you don't know something, say so.`;
-}
-PAGES.assistant = () => `${head("Ask " + BOT)}
-  <div class="card chat"><div class="msgs" id="msgs">
-    <div class="msg"><span class="brand-mark" style="width:36px;height:36px;font-size:12px;flex:none">CS</span><div class="bubble">hey, i'm ${BOT.toLowerCase()}. ask me about the rules, punishments, who to go to, or just chat.</div></div>
-    ${chat.map(m => `<div class="msg ${m.role === "user" ? "me" : ""}">${m.role === "user" ? avatar(S.uid) : `<span class="brand-mark" style="width:36px;height:36px;font-size:12px;flex:none">CS</span>`}<div class="bubble">${esc(m.content)}</div></div>`).join("")}
-  </div>
-  <div class="suggests">${["What is the punishment for RDM?", "What does NLR mean?", "How many staff are on shift?", "How do I request time off?"].map(s => `<button class="suggest">${s}</button>`).join("")}</div>
-  <form class="chat-input" id="chatF"><input class="input" id="chatIn" placeholder="Ask ${BOT} anything..." autocomplete="off" data-fresh><button class="send" aria-label="Send">${icon("arrowR")}</button></form>
-  <p class="muted" style="line-height:1.5;margin:16px 0 0">${S.sample ? `${BOT} runs on Claude and uses your own Claude usage. The first question asks your permission. It can be wrong, so check anything important.` : `${BOT} isn't available in this view.`}</p></div>`;
-PAGES.assistant.after = () => {
-  const box = $("#msgs"); box.scrollTop = 1e9;
-  let busy = false;
-  const ask = async q => {
-    if (!q || busy || !S.sample) return;
-    busy = true; chat.push({ role: "user", content: q });
-    route(true);
-    const bubble = document.createElement("div"); bubble.className = "msg";
-    bubble.innerHTML = `<span class="brand-mark" style="width:36px;height:36px;font-size:12px;flex:none">CS</span><div class="bubble">Thinking...</div>`;
-    $("#msgs").appendChild(bubble); $("#msgs").scrollTop = 1e9;
-    const b = bubble.querySelector(".bubble");
-    try {
-      const { text } = await S.sample([{ role: "user", content: rulesContext() }, ...chat.slice(-12)], { modelTier: "quick", cache: false, onText: ({ text }) => { b.textContent = text; $("#msgs").scrollTop = 1e9; } });
-      chat.push({ role: "assistant", content: text });
-    } catch (e) {
-      chat.pop();
-      b.textContent = e.code === "not_granted" || e.code === "sampling_disabled" ? `${BOT} needs permission to use Claude. You can allow it next time you ask.` : e.code === "rate_limited" ? "Too many questions right now. Try again in a bit." : "Something went wrong. Try again.";
-    }
-    busy = false;
-  };
-  $("#chatF").addEventListener("submit", e => { e.preventDefault(); const v = $("#chatIn").value.trim(); $("#chatIn").value = ""; ask(v); });
-  document.querySelectorAll(".suggest").forEach(b => b.addEventListener("click", () => ask(b.textContent)));
 };
 
 /* ---------- Forms ---------- */

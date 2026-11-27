@@ -6,7 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 # Keep the settings added in Cloudflare's dashboard when a new version deploys.
 keep_vars = true
 # Secrets to add in the dashboard (Worker > Settings > Variables and Secrets, type Secret):
-#   DISCORD_CLIENT_SECRET, SESSION_SECRET, ERLC_SERVER_KEY, BOT_INGEST_SECRET, ANTHROPIC_API_KEY (optional)
+#   DISCORD_CLIENT_SECRET, SESSION_SECRET, ERLC_SERVER_KEY, BOT_INGEST_SECRET,
+#   DISCORD_LOG_WEBHOOK (panel logs), DISCORD_GAME_LOG_WEBHOOK (ER:LC logs, optional), ANTHROPIC_API_KEY (optional)
 
 # Public Discord IDs (not secret). Role/user lists are comma-separated.
 [vars]
@@ -15,6 +16,10 @@ DISCORD_GUILD_ID = "1531330137797165136"
 STAFF_ROLE_IDS = "1574078833684906199"
 HR_ROLE_IDS = "1574078797580607643"
 OWNER_IDS = "1262469782897295461"
+
+# Copies new ER:LC logs to Discord every minute.
+[triggers]
+crons = ["* * * * *"]
 
 # The site's pages and files. Requests that don't match a file go to the worker.
 [assets]
