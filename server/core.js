@@ -71,7 +71,12 @@ async function health(env) {
   const names = [...SIGNIN_VARS, "STAFF_ROLE_IDS", "HR_ROLE_IDS", "OWNER_IDS", "ERLC_SERVER_KEY", "BOT_INGEST_SECRET", "DISCORD_LOG_WEBHOOK", "DISCORD_GAME_LOG_WEBHOOK", "ANTHROPIC_API_KEY"];
   let erlcStatus = "no key";
   if (env.ERLC_SERVER_KEY) {
-    try { const r = await erlcFetch(env, "/v1/server"); erlcStatus = r.ok ? "connected" : r.status === 401 || r.status === 403 ? "key rejected by ER:LC" : r.status === 429 ? "rate limited, try again" : "ER:LC error " + r.status; }
+    try {
+      const r = await erlcFetch(env, "/v1/server");
+      // ER:LC's own error message (never includes the key) explains rejections, e.g. an expired key or an offline server.
+      const why = r.ok ? "" : await r.json().then(j => [j.code, j.message].filter(Boolean).join(": "), () => "");
+      erlcStatus = r.ok ? "connected" : (r.status === 401 || r.status === 403 ? "key rejected by ER:LC" : r.status === 429 ? "rate limited, try again" : "ER:LC error " + r.status) + (why ? ` (${clip(why, 160)})` : "");
+    }
     catch { erlcStatus = "unreachable"; }
   }
   return json({ settings: Object.fromEntries(names.map(k => [k, !!String(env[k] || "").trim()])), missingForSignIn: missingSignIn(env), erlc: erlcStatus });
