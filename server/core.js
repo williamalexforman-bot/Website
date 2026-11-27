@@ -82,6 +82,34 @@ async function health(env) {
   return json({ settings: Object.fromEntries(names.map(k => [k, !!String(env[k] || "").trim()])), missingForSignIn: missingSignIn(env), erlc: erlcStatus });
 }
 const DISCORD = "https://discord.com/api/v10";
+function levelFor(env, id, roles) {
+  const has = list => roles.some(r => ids(list).includes(r));
+  return ids(env.OWNER_IDS).includes(id) || has(env.HR_ROLE_IDS) ? "admin" : has(env.STAFF_ROLE_IDS) ? "staff" : "applicant";
+}
+// Re-checks a signed-in person's Discord roles every few minutes, so removing the staff role
+// (or leaving the server) cuts panel access straight away instead of when the sign-in expires.
+const RECHECK_MS = 3 * 60 * 1000;
+async function currentLevel(env, s) {
+  if (ids(env.OWNER_IDS).includes(s.id)) return "admin";
+  const st = store(env), m = await st.get("sys", "member-" + s.id);
+  if (!m) return "applicant"; // signed in before role checks existed: must sign in again
+  if (Date.now() - m.checkedAt < RECHECK_MS) return m.level;
+  let token = m.token, upd = {};
+  if (Date.now() > m.tokenExp - 60000 && m.refresh) {
+    const r = await fetch(DISCORD + "/oauth2/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: m.refresh }) }).catch(() => null);
+    if (r?.ok) { const t = await r.json(); token = t.access_token; upd = { token, refresh: t.refresh_token || m.refresh, tokenExp: Date.now() + (+t.expires_in || 604800) * 1000 }; }
+    else if (r && r.status < 500) { await st.set("sys", "member-" + s.id, { ...m, level: "applicant", checkedAt: Date.now() }); return "applicant"; }
+  }
+  const res = await fetch(`${DISCORD}/users/@me/guilds/${env.DISCORD_GUILD_ID}/member`, { headers: { authorization: "Bearer " + token } }).catch(() => null);
+  let level = m.level;
+  if (res?.ok) level = levelFor(env, s.id, (await res.json()).roles || []);
+  else if (res && [401, 403, 404].includes(res.status)) level = "applicant"; // left the server or revoked the app
+  // Discord busy or down (429/5xx): keep the last known level and try again shortly.
+  const retryLater = !res || res.status === 429 || res.status >= 500;
+  await st.set("sys", "member-" + s.id, { ...m, ...upd, level, checkedAt: retryLater ? Date.now() - RECHECK_MS + 30000 : Date.now() });
+  return level;
+}
 async function login(req, env) {
   const url = new URL(req.url);
   if (missingSignIn(env).length) return new Response(null, { status: 302, headers: { location: "/#signin-error-setup" } });
@@ -99,15 +127,16 @@ async function callback(req, env) {
   const tok = await fetch(DISCORD + "/oauth2/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code, redirect_uri: url.origin + "/auth/callback" }) });
   if (!tok.ok) return back("token");
-  const { access_token } = await tok.json();
+  const tokens = await tok.json(), { access_token } = tokens;
   const H = { authorization: "Bearer " + access_token };
   const meRes = await fetch(DISCORD + "/users/@me", { headers: H }); if (!meRes.ok) return back("user");
   const me = await meRes.json();
   let roles = [];
   const mem = await fetch(`${DISCORD}/users/@me/guilds/${env.DISCORD_GUILD_ID}/member`, { headers: H });
   if (mem.ok) roles = (await mem.json()).roles || [];
-  const has = list => roles.some(r => ids(list).includes(r));
-  const level = ids(env.OWNER_IDS).includes(me.id) || has(env.HR_ROLE_IDS) ? "admin" : has(env.STAFF_ROLE_IDS) ? "staff" : "applicant";
+  const level = levelFor(env, me.id, roles);
+  // Kept server-side only (never sent to browsers) so roles can be re-checked while someone is signed in.
+  await store(env).set("sys", "member-" + me.id, { token: access_token, refresh: tokens.refresh_token || "", tokenExp: Date.now() + (+tokens.expires_in || 604800) * 1000, level, checkedAt: Date.now() });
   const avatar = me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=96` : "";
   const s = { id: me.id, name: me.username, avatar, level, exp: Date.now() + 12 * 3600e3 };
   if (level !== "applicant") {
@@ -373,6 +402,7 @@ export async function handle(req, env, storeImpl) {
         // Same-origin only for writes (cookies are SameSite=Lax; this blocks cross-site form posts too).
         if (req.method !== "GET" && req.headers.get("origin") && req.headers.get("origin") !== url.origin) return err(403, "Bad origin");
         const s = await readSession(req, env);
+        if (s) s.level = await currentLevel(env, s);
         if (p === "/api/me") return s ? json({ id: s.id, name: s.name, avatar: s.avatar, level: s.level }) : err(401, "Signed out");
         if (!s) return err(401, "Signed out");
         const parts = p.split("/").slice(3).map(decodeURIComponent);
